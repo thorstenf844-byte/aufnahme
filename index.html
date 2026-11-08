@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Aufnahme">
+<meta name="theme-color" content="#0b5c8a">
+<title>Gesprächs-Recorder</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1d1c1a;--muted:#6b6860;--line:#e4e1d8;--accent:#0b5c8a;--accent-ink:#fff;--soft:#e8f1f7;--rec:#c62f2f;--warn:#a4531c}
+@media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1f1f1e;--ink:#f0eee8;--muted:#a3a097;--line:#33322f;--accent:#5fb0e0;--accent-ink:#0d1a22;--soft:#1c2a33;--rec:#ef5b5b;--warn:#e3a06b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:720px;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom))}
+h1{font-size:1.4rem;margin:6px 0 12px}
+.tabs{display:flex;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:14px}
+.tabs button{flex:1;border:0;background:transparent;color:var(--muted);padding:9px 4px;border-radius:9px;font:inherit;font-weight:600;font-size:.92rem}
+.tabs button.on{background:var(--accent);color:var(--accent-ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.card h2{font-size:1.05rem;margin:0 0 10px}
+label{display:block;font-weight:600;font-size:.9rem;margin:12px 0 4px}
+input[type=text],input[type=password]{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit}
+.btn{border:0;border-radius:11px;padding:12px 16px;font:inherit;font-weight:650;background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+.btn.small{padding:7px 11px;font-size:.88rem}
+.btn:disabled{opacity:.5}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.muted{color:var(--muted);font-size:.88rem}
+.hidden{display:none!important}
+.recwrap{display:flex;flex-direction:column;align-items:center;gap:10px;padding:8px 0}
+.recbtn{width:120px;height:120px;border-radius:50%;border:6px solid var(--line);background:var(--rec);color:#fff;font:inherit;font-weight:700;font-size:1rem}
+.recbtn.on{animation:pulse 1.6s infinite;border-color:var(--rec);background:#fff;color:var(--rec)}
+@media (prefers-color-scheme:dark){.recbtn.on{background:#2a1515}}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(198,47,47,.45)}70%{box-shadow:0 0 0 18px rgba(198,47,47,0)}100%{box-shadow:0 0 0 0 rgba(198,47,47,0)}}
+.timer{font-variant-numeric:tabular-nums;font-size:1.6rem;font-weight:700}
+.status{min-height:1.3em;font-size:.9rem;color:var(--muted);text-align:center}
+.status.err{color:var(--warn)}
+.transcript{white-space:pre-wrap;max-height:240px;overflow:auto;background:var(--bg);border-radius:10px;padding:10px;font-size:.93rem}
+.interim{color:var(--muted)}
+ul.plain{margin:0;padding-left:20px} ul.plain li{margin:4px 0}
+.task{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line)}
+.task:last-child{border-bottom:0}
+.task input{width:22px;height:22px;margin-top:2px;accent-color:var(--accent);flex:none}
+.task.done .t{text-decoration:line-through;color:var(--muted)}
+.meta{font-size:.82rem;color:var(--muted)}
+.pill{display:inline-block;font-size:.75rem;font-weight:700;border-radius:99px;padding:1px 8px;margin-right:6px;background:#f6e3d6;color:#8a3b0b}
+.item{padding:12px 0;border-bottom:1px solid var(--line)} .item:last-child{border-bottom:0}
+.item b{display:block}
+.live{background:var(--soft);border-radius:12px;padding:12px 14px}
+.live h3{margin:0 0 6px;font-size:.95rem}
+audio{width:100%;margin-top:8px}
+details summary{cursor:pointer;font-weight:600}
+.check{display:flex;gap:8px;align-items:center;font-weight:500;margin-top:12px}
+.check input{width:20px;height:20px}
+</style>
+</head>
+<body>
+<main>
+<h1>Gesprächs-Recorder</h1>
+<div class="tabs">
+  <button id="tab-rec" class="on">Aufnahme</button>
+  <button id="tab-todo">Aufgaben</button>
+  <button id="tab-arch">Archiv</button>
+  <button id="tab-set">⚙︎</button>
+</div>
+
+<!-- AUFNAHME -->
+<section id="v-rec">
+  <div class="card hidden" id="setup-hint"><b>Einmalig einrichten:</b> Tippe oben auf ⚙︎ und trage deinen Claude-API-Schlüssel ein. Ohne Schlüssel wird nur aufgenommen und mitgeschrieben.</div>
+  <div class="card">
+    <input type="text" id="title" placeholder="Titel (optional), z. B. Sitzung Personalausschuss">
+    <div class="recwrap">
+      <button class="recbtn" id="rec">Start</button>
+      <div class="timer" id="timer">00:00</div>
+      <div class="status" id="status">Bereit</div>
+    </div>
+    <div class="muted" style="text-align:center">Bildschirm bleibt während der Aufnahme an. Safari bitte nicht verlassen.</div>
+  </div>
+  <div class="card hidden" id="live-card">
+    <div class="live hidden" id="live"><h3>Live-Zusammenfassung</h3><ul class="plain" id="live-sum"></ul><div class="meta" id="live-time"></div></div>
+    <h2 style="margin-top:12px">Mitschrift</h2>
+    <div class="transcript" id="tx"><span id="tx-final"></span><span class="interim" id="tx-interim"></span></div>
+  </div>
+  <div id="result"></div>
+</section>
+
+<!-- AUFGABEN -->
+<section id="v-todo" class="hidden">
+  <div class="card"><h2>Offene Aufgaben</h2><div id="todo-list"></div></div>
+  <details class="card"><summary>Erledigte</summary><div id="done-list" style="margin-top:8px"></div></details>
+</section>
+
+<!-- ARCHIV -->
+<section id="v-arch" class="hidden">
+  <div class="card" id="arch-card"><h2>Gespräche</h2><div id="arch-list"></div></div>
+  <div id="arch-detail" class="hidden"><button class="btn ghost small" id="back" style="margin-bottom:12px">← Zurück</button><div id="detail"></div></div>
+</section>
+
+<!-- EINSTELLUNGEN -->
+<section id="v-set" class="hidden">
+  <div class="card">
+    <h2>Einstellungen</h2>
+    <label for="name">Dein Name</label>
+    <input type="text" id="name" value="Thorsten">
+    <label for="key">Claude-API-Schlüssel</label>
+    <input type="password" id="key" placeholder="sk-ant-…" autocomplete="off">
+    <p class="muted">Bekommst du unter console.anthropic.com → API Keys. Der Schlüssel bleibt nur auf diesem iPhone gespeichert und wird nur an Anthropic gesendet.</p>
+    <label class="check"><input type="checkbox" id="keep-audio" checked> Audio mitspeichern</label>
+    <label class="check"><input type="checkbox" id="live-on" checked> Live-Zusammenfassung während der Aufnahme</label>
+    <div class="row" style="margin-top:14px"><button class="btn" id="save-set">Speichern</button><button class="btn ghost" id="test-key">Schlüssel testen</button></div>
+    <div class="status" id="set-status" style="text-align:left"></div>
+  </div>
+  <div class="card muted">
+    <b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
+  </div>
+</section>
+</main>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const MODEL = "claude-sonnet-5-5";
+const LIVE_EVERY_MS = 90000;
+
+/* ---------- Einstellungen ---------- */
+const S = {
+  get(k, d){ try{ const v = localStorage.getItem("gr-"+k); return v===null ? d : v; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem("gr-"+k, v); }catch(e){} }
+};
+$("name").value = S.get("name","Thorsten");
+$("key").value = S.get("key","");
+$("keep-audio").checked = S.get("audio","1")==="1";
+$("live-on").checked = S.get("live","1")==="1";
+const hasKey = () => !!S.get("key","").trim();
+const refreshHint = () => $("setup-hint").classList.toggle("hidden", hasKey());
+refreshHint();
+$("save-set").onclick = () => {
+  S.set("name",$("name").value.trim()||"Thorsten"); S.set("key",$("key").value.trim());
+  S.set("audio",$("keep-audio").checked?"1":"0"); S.set("live",$("live-on").checked?"1":"0");
+  $("set-status").textContent = "Gespeichert."; refreshHint();
+};
+$("test-key").onclick = async () => {
+  S.set("key",$("key").value.trim()); refreshHint();
+  $("set-status").textContent = "Teste …";
+  try { await askClaude("Antworte nur mit: OK", 10); $("set-status").textContent = "Schlüssel funktioniert ✓"; }
+  catch(e){ $("set-status").textContent = "Fehler: " + e.message; }
+};
+
+/* ---------- Tabs ---------- */
+const tabs = ["rec","todo","arch","set"];
+function show(t){ tabs.forEach(k => { $("v-"+k).classList.toggle("hidden",k!==t); $("tab-"+k).classList.toggle("on",k===t); }); if(t==="todo"||t==="arch"){ closeDetail(); renderLists(); } }
+tabs.forEach(k => $("tab-"+k).onclick = () => show(k));
+
+/* ---------- Claude API ---------- */
+async function askClaude(prompt, maxTokens){
+  const key = S.get("key","").trim();
+  if (!key) throw new Error("Kein API-Schlüssel eingetragen.");
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{ "content-type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
+    body: JSON.stringify({ model:MODEL, max_tokens:maxTokens||2000, messages:[{role:"user", content:prompt}] })
+  });
+  const data = await res.json().catch(()=> ({}));
+  if (!res.ok) {
+    const m = data?.error?.message || ("HTTP " + res.status);
+    if (res.status===401) throw new Error("API-Schlüssel ungültig.");
+    if (res.status===429) throw new Error("Zu viele Anfragen – kurz warten.");
+    throw new Error(m);
+  }
+  return (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
+}
+function parseJSON(t){
+  const s = t.indexOf("{"), e = t.lastIndexOf("}");
+  if (s<0||e<0) throw new Error("Antwort nicht lesbar.");
+  return JSON.parse(t.slice(s,e+1));
+}
+function finalPrompt(text, me){
+  return `Du bist ein Protokoll-Assistent. Werte das folgende Gesprächs-Transkript (automatische Spracherkennung, kann Fehler enthalten) auf Deutsch aus.
+Ich bin "${me}" und habe aufgenommen. Ordne mir Aufgaben zu, die ich übernehme, die mir zugewiesen werden oder die ich ankündige ("ich mache…", "ich kümmere mich…"). Ist unklar, wer etwas tun soll, und betrifft es plausibel mich, nimm es auf und setze "unsicher": true.
+Erfinde nichts. Fristen nur, wenn sie genannt werden, sonst "".
+Antworte NUR mit JSON:
+{"titel":"kurzer Titel","zusammenfassung":["3-8 Kernpunkte"],"entscheidungen":["…"],"meine_aufgaben":[{"aufgabe":"mit Verb beginnend","frist":"","prioritaet":"hoch|normal","unsicher":false}],"aufgaben_andere":[{"wer":"","aufgabe":"","frist":""}],"offene_fragen":["…"]}
+
+TRANSKRIPT:
+"""
+${text}
+"""`;
+}
+function livePrompt(text){
+  return `Hier ist die bisherige Mitschrift eines laufenden Gesprächs (Spracherkennung, kann Fehler enthalten). Fasse den bisherigen Stand in 3 bis 6 sehr knappen deutschen Stichpunkten zusammen. Antworte NUR mit JSON: {"punkte":["…"]}
+
+MITSCHRIFT:
+"""
+${text}
+"""`;
+}
+function normalize(r){
+  r = (r && typeof r==="object") ? r : {};
+  const A = x => Array.isArray(x) ? x : [];
+  return {
+    titel:String(r.titel||"Gespräch"),
+    zusammenfassung:A(r.zusammenfassung).map(String),
+    entscheidungen:A(r.entscheidungen).map(String),
+    meine_aufgaben:A(r.meine_aufgaben).map(a=>({aufgabe:String(a?.aufgabe||""),frist:String(a?.frist||""),prioritaet:a?.prioritaet==="hoch"?"hoch":"normal",unsicher:!!a?.unsicher,done:!!a?.done})).filter(a=>a.aufgabe),
+    aufgaben_andere:A(r.aufgaben_andere).map(a=>({wer:String(a?.wer||""),aufgabe:String(a?.aufgabe||""),frist:String(a?.frist||"")})).filter(a=>a.aufgabe),
+    offene_fragen:A(r.offene_fragen).map(String)
+  };
+}
+
+/* ---------- Speicher (IndexedDB) ---------- */
+let idb = null;
+function openDB(){
+  return new Promise((res,rej)=>{
+    try{
+      const r = indexedDB.open("gespraechs-recorder",1);
+      r.onupgradeneeded = () => r.result.createObjectStore("meetings",{keyPath:"id"});
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    }catch(e){ rej(e); }
+  });
+}
+const tx = (mode, fn) => new Promise((res,rej)=>{ const t = idb.transaction("meetings",mode); const s = t.objectStore("meetings"); const out = fn(s); t.oncomplete=()=>res(out?.result); t.onerror=()=>rej(t.error); });
+const dbPut = m => idb ? tx("readwrite", s=>s.put(m)) : Promise.resolve();
+const dbDel = id => idb ? tx("readwrite", s=>s.delete(id)) : Promise.resolve();
+const dbAll = () => idb ? tx("readonly", s=>s.getAll()) : Promise.resolve([]);
+let meetings = [];
+async function load(){ try{ idb = await openDB(); meetings = (await dbAll()).sort((a,b)=>b.created-a.created); }catch(e){ idb=null; } }
+
+/* ---------- Aufnahme ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recording = false, rec = null, mr = null, stream = null, chunks = [], mime = "";
+let finalText = "", interim = "", t0 = 0, tick = null, liveTimer = null, lastLiveLen = 0, wakeLock = null, liveBusy = false;
+
+function setStatus(t, err){ $("status").textContent = t; $("status").classList.toggle("err", !!err); }
+function fmtDur(ms){ const s = Math.floor(ms/1000); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60; return (h? h+":" : "") + String(m).padStart(2,"0")+":"+String(x).padStart(2,"0"); }
+function renderTx(){ $("tx-final").textContent = finalText; $("tx-interim").textContent = interim ? " " + interim : ""; const el=$("tx"); el.scrollTop = el.scrollHeight; }
+
+function startRecognition(){
+  if (!SR) return;
+  rec = new SR();
+  rec.lang = "de-DE"; rec.continuous = true; rec.interimResults = true;
+  rec.onresult = e => {
+    interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++){
+      const r = e.results[i];
+      if (r.isFinal) finalText += (finalText && !/\s$/.test(finalText) ? " " : "") + r[0].transcript.trim();
+      else interim += r[0].transcript;
+    }
+    renderTx();
+  };
+  rec.onerror = e => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed"){ setStatus("Spracherkennung nicht erlaubt. Bitte in den Einstellungen Mikrofon & Spracherkennung für Safari erlauben.", true); }
+  };
+  rec.onend = () => {                  // iOS beendet die Erkennung regelmäßig – neu starten
+    if (interim){ finalText += (finalText?" ":"") + interim.trim(); interim=""; renderTx(); }
+    if (recording) setTimeout(()=>{ if (recording) try{ rec.start(); }catch(e){} }, 250);
+  };
+  try { rec.start(); } catch(e){}
+}
+
+async function start(){
+  if (!SR){ setStatus("Dieser Browser kann nicht live mitschreiben. Bitte die Seite in Safari öffnen (Edge auf dem iPhone unterstützt das nicht).", true); return; }
+  finalText = ""; interim = ""; chunks = []; lastLiveLen = 0;
+  $("result").innerHTML = ""; $("live").classList.add("hidden"); $("live-sum").innerHTML="";
+  $("live-card").classList.remove("hidden"); renderTx();
+  if ($("keep-audio").checked && window.MediaRecorder && navigator.mediaDevices?.getUserMedia){
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      mime = ["audio/mp4","audio/webm;codecs=opus","audio/webm"].find(t => MediaRecorder.isTypeSupported?.(t)) || "";
+      mr = new MediaRecorder(stream, mime ? {mimeType:mime} : undefined);
+      mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      mr.start(5000);
+    }catch(e){ mr = null; stream = null; }
+  }
+  recording = true; startRecognition();
+  t0 = Date.now(); tick = setInterval(()=> $("timer").textContent = fmtDur(Date.now()-t0), 500);
+  $("rec").classList.add("on"); $("rec").textContent = "Stopp";
+  setStatus(hasKey() && $("live-on").checked ? "Nimmt auf · Live-Zusammenfassung aktiv" : "Nimmt auf");
+  try{ wakeLock = await navigator.wakeLock?.request("screen"); }catch(e){}
+  if (hasKey() && $("live-on").checked) liveTimer = setInterval(liveSummary, LIVE_EVERY_MS);
+}
+
+async function liveSummary(){
+  const text = finalText.trim();
+  if (liveBusy || text.split(/\s+/).length < 40 || text.length - lastLiveLen < 150) return;
+  liveBusy = true;
+  try{
+    const r = parseJSON(await askClaude(livePrompt(text), 600));
+    lastLiveLen = text.length;
+    $("live-sum").innerHTML = (r.punkte||[]).map(p=>`<li>${esc(p)}</li>`).join("");
+    $("live-time").textContent = "Stand " + new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+    $("live").classList.remove("hidden");
+  }catch(e){ /* leise weiter aufnehmen */ }
+  finally{ liveBusy = false; }
+}
+
+async function stop(){
+  recording = false;
+  clearInterval(tick); clearInterval(liveTimer);
+  try{ rec && rec.stop(); }catch(e){}
+  try{ wakeLock && wakeLock.release(); }catch(e){} wakeLock = null;
+  $("rec").classList.remove("on"); $("rec").textContent = "Start";
+  const dur = Date.now() - t0;
+  let audio = null;
+  if (mr){
+    await new Promise(r => { mr.onstop = r; try{ mr.stop(); }catch(e){ r(); } });
+    stream?.getTracks().forEach(t=>t.stop());
+    if (chunks.length) audio = new Blob(chunks, {type: mr.mimeType || mime || "audio/mp4"});
+    mr = null; stream = null;
+  }
+  await new Promise(r=>setTimeout(r,600));      // letzte Erkennung abwarten
+  if (interim){ finalText += (finalText?" ":"") + interim.trim(); interim=""; renderTx(); }
+  const text = finalText.trim();
+  const m = { id: String(Date.now()), created: t0, duration: dur, text, audio, titel: $("title").value.trim() || "Gespräch vom " + new Date(t0).toLocaleDateString("de-DE"),
+              zusammenfassung:[], entscheidungen:[], meine_aufgaben:[], aufgaben_andere:[], offene_fragen:[], ausgewertet:false };
+  meetings.unshift(m); await dbPut(m).catch(()=>{});
+  if (!text){ setStatus("Es wurde kein Text erkannt. Aufnahme gespeichert.", true); renderResult(m); return; }
+  await analyze(m);
+}
+
+async function analyze(m){
+  if (!hasKey()){ setStatus("Gespeichert. Für Zusammenfassung & Aufgaben API-Schlüssel unter ⚙︎ eintragen."); renderResult(m); return; }
+  setStatus("Claude wertet das Gespräch aus …");
+  renderResult(m, true);
+  try{
+    const r = normalize(parseJSON(await askClaude(finalPrompt(m.text.slice(0,400000), S.get("name","Thorsten")), 3000)));
+    const keepTitle = $("title").value.trim() || (m.ausgewertet ? m.titel : "");
+    Object.assign(m, r, {ausgewertet:true}); if (keepTitle) m.titel = keepTitle;
+    await dbPut(m).catch(()=>{});
+    setStatus("Fertig ✓");
+  }catch(e){ setStatus("Auswertung fehlgeschlagen: " + e.message + " – im Archiv erneut versuchen.", true); }
+  renderResult(m);
+}
+
+$("rec").onclick = () => recording ? stop() : start();
+window.addEventListener("beforeunload", e => { if (recording){ e.preventDefault(); e.returnValue=""; } });
+document.addEventListener("visibilitychange", async () => { if (recording && document.visibilityState==="visible"){ try{ wakeLock = await navigator.wakeLock?.request("screen"); }catch(e){} if (!rec) startRecognition(); } });
+
+/* ---------- Darstellung ---------- */
+const fmtDate = ts => new Date(ts).toLocaleString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
+const li = xs => xs.map(x=>`<li>${esc(x)}</li>`).join("");
+function taskHTML(m, i, extra){
+  const a = m.meine_aufgaben[i];
+  const meta = [a.frist?"Frist: "+esc(a.frist):"", a.unsicher?"Zuordnung unsicher":"", extra||""].filter(Boolean).join(" · ");
+  return `<div class="task ${a.done?"done":""}"><input type="checkbox" data-m="${esc(m.id)}" data-i="${i}" ${a.done?"checked":""}><div><div class="t">${a.prioritaet==="hoch"?'<span class="pill">wichtig</span>':""}${esc(a.aufgabe)}</div>${meta?`<div class="meta">${meta}</div>`:""}</div></div>`;
+}
+const audioURLs = new Map();
+function audioURL(m){ if (!m.audio) return ""; if (!audioURLs.has(m.id)) audioURLs.set(m.id, URL.createObjectURL(m.audio)); return audioURLs.get(m.id); }
+function meetingHTML(m, busy){
+  const ext = m.audio && /webm/.test(m.audio.type) ? "webm" : "m4a";
+  let h = `<div class="card"><h2>${esc(m.titel)}</h2><div class="meta">${fmtDate(m.created)} · ${fmtDur(m.duration||0)}</div>`;
+  if (busy) h += `<p class="muted">Zusammenfassung wird erstellt …</p>`;
+  else if (m.ausgewertet) h += `<ul class="plain" style="margin-top:8px">${li(m.zusammenfassung)}</ul>`;
+  else if (m.text) h += `<p class="muted">Noch nicht ausgewertet.</p><button class="btn small" data-analyze="${esc(m.id)}">Jetzt auswerten</button>`;
+  h += `</div>`;
+  if (m.ausgewertet){
+    h += `<div class="card"><h2>Das hast du zu tun</h2>${m.meine_aufgaben.length ? m.meine_aufgaben.map((_,i)=>taskHTML(m,i)).join("") : "<p class='muted'>Keine Aufgaben für dich erkannt.</p>"}
+          ${m.meine_aufgaben.length?`<div class="row" style="margin-top:10px"><button class="btn ghost small" data-copy="${esc(m.id)}">Aufgaben kopieren</button><span class="muted" id="cn-${esc(m.id)}"></span></div>`:""}</div>`;
+    if (m.entscheidungen.length) h += `<div class="card"><h2>Entscheidungen</h2><ul class="plain">${li(m.entscheidungen)}</ul></div>`;
+    if (m.aufgaben_andere.length) h += `<div class="card"><h2>Aufgaben anderer</h2><ul class="plain">${m.aufgaben_andere.map(a=>`<li><b>${esc(a.wer||"?")}:</b> ${esc(a.aufgabe)}${a.frist?` <span class="meta">(bis ${esc(a.frist)})</span>`:""}</li>`).join("")}</ul></div>`;
+    if (m.offene_fragen.length) h += `<div class="card"><h2>Offene Fragen</h2><ul class="plain">${li(m.offene_fragen)}</ul></div>`;
+  }
+  if (m.audio) h += `<div class="card"><h2>Aufnahme</h2><audio controls preload="none" src="${audioURL(m)}"></audio><div class="row" style="margin-top:8px"><a class="btn ghost small" href="${audioURL(m)}" download="${esc(m.titel)}.${ext}">Audio sichern</a></div></div>`;
+  if (m.text) h += `<details class="card"><summary>Mitschrift</summary><div class="transcript" style="margin-top:8px">${esc(m.text)}</div></details>`;
+  return h;
+}
+function renderResult(m, busy){ $("result").innerHTML = meetingHTML(m, busy); }
+
+function renderLists(){
+  const open=[], done=[];
+  meetings.forEach(m => (m.meine_aufgaben||[]).forEach((a,i)=>(a.done?done:open).push([m,i])));
+  open.sort((x,y)=> (x[0].meine_aufgaben[x[1]].prioritaet==="hoch"?0:1)-(y[0].meine_aufgaben[y[1]].prioritaet==="hoch"?0:1) || y[0].created-x[0].created);
+  const row = ([m,i]) => taskHTML(m,i, esc(m.titel));
+  $("todo-list").innerHTML = open.length ? open.map(row).join("") : `<p class="muted">${meetings.length?"Alles erledigt 🎉":"Noch keine Gespräche aufgenommen."}</p>`;
+  $("done-list").innerHTML = done.length ? done.map(row).join("") : "<p class='muted'>Noch nichts erledigt.</p>";
+  $("arch-list").innerHTML = meetings.length ? meetings.map(m=>{
+    const n=(m.meine_aufgaben||[]).filter(a=>!a.done).length;
+    return `<div class="item" data-open="${esc(m.id)}"><b>${esc(m.titel)}</b><span class="meta">${fmtDate(m.created)} · ${fmtDur(m.duration||0)} · ${n} offen</span></div>`;
+  }).join("") : "<p class='muted'>Noch nichts gespeichert.</p>";
+}
+let openId = null;
+function openDetail(id){
+  const m = meetings.find(x=>x.id===id); if(!m) return; openId=id;
+  $("detail").innerHTML = meetingHTML(m) + `<button class="btn ghost" data-del="${esc(m.id)}">Gespräch löschen</button>`;
+  $("arch-card").classList.add("hidden"); $("arch-detail").classList.remove("hidden"); window.scrollTo(0,0);
+}
+function closeDetail(){ openId=null; $("arch-detail").classList.add("hidden"); $("arch-card").classList.remove("hidden"); }
+$("back").onclick = () => { closeDetail(); renderLists(); };
+
+let delArmed = null;
+document.addEventListener("click", async e => {
+  const t = e.target.closest("[data-open],[data-analyze],[data-copy],[data-del]"); if (!t) return;
+  if (t.dataset.open) openDetail(t.dataset.open);
+  else if (t.dataset.analyze){
+    const m = meetings.find(x=>x.id===t.dataset.analyze); if (!m) return;
+    show("rec"); await analyze(m);
+  }
+  else if (t.dataset.copy){
+    const m = meetings.find(x=>x.id===t.dataset.copy); if (!m) return;
+    const txt = m.titel + "\n" + m.meine_aufgaben.map(a=>"☐ "+a.aufgabe+(a.frist?" (bis "+a.frist+")":"")).join("\n");
+    const note = document.getElementById("cn-"+m.id);
+    try{ await navigator.clipboard.writeText(txt); if(note) note.textContent="Kopiert."; }catch(err){ if(note) note.textContent="Kopieren nicht möglich."; }
+  }
+  else if (t.dataset.del){
+    if (delArmed !== t.dataset.del){ delArmed = t.dataset.del; t.textContent = "Wirklich löschen? Nochmal tippen"; setTimeout(()=>{ if(delArmed){ delArmed=null; t.textContent="Gespräch löschen"; } },4000); return; }
+    delArmed = null; const id = t.dataset.del;
+    await dbDel(id).catch(()=>{}); meetings = meetings.filter(x=>x.id!==id);
+    closeDetail(); renderLists();
+  }
+});
+document.addEventListener("change", async e => {
+  const cb = e.target; if (!cb.matches("input[type=checkbox][data-m]")) return;
+  const m = meetings.find(x=>x.id===cb.dataset.m); if (!m) return;
+  m.meine_aufgaben[+cb.dataset.i].done = cb.checked;
+  cb.closest(".task")?.classList.toggle("done", cb.checked);
+  await dbPut(m).catch(()=>{});
+});
+
+load().then(()=>{ renderLists(); if (!idb) setStatus("Hinweis: Speichern auf diesem Gerät nicht möglich (privater Modus?).", true); });
+if (!SR) setStatus("Dieser Browser kann nicht live mitschreiben (z. B. Edge auf dem iPhone). Bitte die Seite in Safari öffnen oder aus Safari zum Home-Bildschirm hinzufügen.", true);
+})();
+</script>
+</body>
+</html>
