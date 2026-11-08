@@ -113,7 +113,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 5</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 6</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -287,21 +287,24 @@ function startRecognition(){
   try { rec.start(); } catch(e){ srFails++; srFailedHint("start"); }
 }
 
-async function start(){
+async function start(cont){
+  if (cont && !(cont.text !== undefined)) cont = null;
   if (busy && Date.now() - busyAt < 10000) return;
   if (!SR){ setStatus("Dieser Browser kann nicht live mitschreiben. Bitte die Seite in Safari öffnen (Edge auf dem iPhone unterstützt das nicht).", true); return; }
   busy = true; busyAt = Date.now();
   try{
     $("timer").textContent = "00:00";
-    finalText = ""; interim = ""; chunks = []; lastLiveLen = 0; srFails = 0;
+    finalText = cont ? (cont.text || "") : ""; interim = ""; chunks = []; lastLiveLen = 0; srFails = 0;
+    if (!cont) contId = null;
+    if (cont && cont.titel && !$("title").value) $("title").value = cont.titel;
     $("result").innerHTML = ""; $("live").classList.add("hidden"); $("live-sum").innerHTML="";
     $("live-card").classList.remove("hidden"); renderTx();
     recording = true;
     $("rec").classList.add("on"); $("rec").textContent = "Stopp";
-    t0 = Date.now(); tick = setInterval(()=> $("timer").textContent = fmtDur(Date.now()-t0), 500);
+    t0 = cont ? cont.created : Date.now(); tick = setInterval(()=> $("timer").textContent = fmtDur(Date.now()-t0), 500);
     setStatus(hasKey() && $("live-on").checked ? "Nimmt auf · Live-Zusammenfassung aktiv" : "Nimmt auf");
     startRecognition();                              // Mitschrift zuerst
-    if ($("keep-audio").checked && window.MediaRecorder && navigator.mediaDevices?.getUserMedia){
+    if (!cont && $("keep-audio").checked && window.MediaRecorder && navigator.mediaDevices?.getUserMedia){
       try{
         const s2 = await Promise.race([navigator.mediaDevices.getUserMedia({audio:true}), new Promise((_,j)=>setTimeout(()=>j(new Error("timeout")),8000))]);
         if (!recording){ s2.getTracks().forEach(t=>t.stop()); return; }
@@ -331,18 +334,16 @@ async function liveSummary(){
   finally{ liveBusy = false; }
 }
 
-async function stop(){
-  if (!recording) return;
+async function finishSession(partial){
   recording = false;
-  $("rec").classList.remove("on"); $("rec").textContent = "Start"; setStatus("Wird beendet …");
+  $("rec").classList.remove("on"); $("rec").textContent = "Start"; setStatus(partial ? "Zwischenstand wird gesichert …" : "Wird beendet …");
   clearInterval(tick); clearInterval(liveTimer);
   const oldRec = rec;
   try{ oldRec && oldRec.stop(); }catch(e){ try{ oldRec.abort(); }catch(x){} }
   setTimeout(()=>{ try{ if (oldRec){ oldRec.onend = oldRec.onerror = oldRec.onresult = null; oldRec.abort(); } if (rec === oldRec) rec = null; }catch(e){} }, 1500);
   try{ wakeLock && wakeLock.release(); }catch(e){} wakeLock = null;
-  const dur = Date.now() - t0;
+  if (!partial) $("resume").classList.add("hidden");
   let audio = null;
-  $("resume").classList.add("hidden");
   if (mr){
     await new Promise(r => { const to = setTimeout(r, 2500); mr.onstop = () => { clearTimeout(to); r(); }; try{ if (mr.state !== "inactive") mr.stop(); else r(); }catch(e){ r(); } });
     try{ stream?.getTracks().forEach(t=>t.stop()); }catch(e){}
@@ -350,14 +351,28 @@ async function stop(){
     mr = null; stream = null;
   }
   if (!audio && chunks.length) audio = new Blob(chunks, {type: mime || "audio/mp4"});
-  await new Promise(r=>setTimeout(r,600));      // letzte Erkennung abwarten
+  await new Promise(r=>setTimeout(r, partial ? 300 : 600));
   if (interim){ finalText += (finalText?" ":"") + interim.trim(); interim=""; renderTx(); }
   const text = finalText.trim();
-  const m = { id: String(Date.now()), created: t0, duration: dur, text, audio, titel: $("title").value.trim() || "Gespräch vom " + new Date(t0).toLocaleDateString("de-DE"),
-              zusammenfassung:[], entscheidungen:[], meine_aufgaben:[], aufgaben_andere:[], offene_fragen:[], ausgewertet:false };
-  meetings.unshift(m); await dbPut(m).catch(()=>{});
-  $("title").value = "";
-  if (!text){ setStatus("Es wurde kein Text erkannt. Aufnahme gespeichert.", true); renderResult(m); return; }
+  let m = contId ? meetings.find(x => x.id === contId) : null;
+  if (m){
+    Object.assign(m, {text, duration: Date.now() - m.created, unterbrochen: partial});
+    if (audio && !m.audio) m.audio = audio;
+    if ($("title").value.trim()) m.titel = $("title").value.trim();
+  } else {
+    m = { id: String(Date.now()), created: t0, duration: Date.now() - t0, text, audio, titel: $("title").value.trim() || "Gespräch vom " + new Date(t0).toLocaleDateString("de-DE"),
+          zusammenfassung:[], entscheidungen:[], meine_aufgaben:[], aufgaben_andere:[], offene_fragen:[], ausgewertet:false, unterbrochen: partial };
+    meetings.unshift(m);
+  }
+  await dbPut(m).catch(()=>{});
+  if (!partial){ contId = null; $("title").value = ""; }
+  return m;
+}
+
+async function stop(){
+  if (!recording) return;
+  const m = await finishSession(false);
+  if (!m.text){ setStatus("Es wurde kein Text erkannt. Aufnahme gespeichert.", true); renderResult(m); return; }
   await analyze(m);
 }
 
@@ -375,15 +390,25 @@ async function analyze(m){
   renderResult(m);
 }
 
-$("resume").onclick = () => {
-  if (!recording) return;
-  // Ton-Aufnahme beenden (bisheriger Ton bleibt erhalten), damit das Mikrofon für die Mitschrift frei ist
-  if (mr){ try{ if (mr.state !== "inactive") mr.stop(); }catch(e){} try{ stream?.getTracks().forEach(t=>t.stop()); }catch(e){} mr = null; stream = null; }
-  srFails = 0; visibleAt = Date.now();
-  startRecognition();
-  setStatus("Mitschrift wird fortgesetzt … (Ton ab hier nicht mehr gespeichert)");
+let contId = null;   // Gespräch, das nach Neuladen fortgesetzt wird
+$("resume").onclick = async () => {
+  if (recording){
+    // Safari kann die Erkennung nach einer Sperre nicht neu starten -> Zwischenstand sichern und Seite neu laden
+    $("resume").disabled = true; setStatus("Zwischenstand wird gesichert …");
+    const m = await finishSession(true);
+    S.set("resume", m.id);
+    location.reload();
+    return;
+  }
+  const id = S.get("resume", "");
+  const m = meetings.find(x => x.id === id);
+  S.set("resume", "");
+  $("resume").classList.add("hidden");
+  if (!m){ setStatus("Kein unterbrochenes Gespräch gefunden."); return; }
+  contId = m.id;
+  start(m);
 };
-$("rec").onclick = () => { if (recording) stop().catch(e=>setStatus("Fehler beim Beenden: "+e.message, true)); else start(); };
+$("rec").onclick = () => { if (recording) stop().catch(e=>setStatus("Fehler beim Beenden: "+e.message, true)); else { S.set("resume",""); $("resume").classList.add("hidden"); start(); } };
 window.addEventListener("beforeunload", e => { if (recording){ e.preventDefault(); e.returnValue=""; } });
 document.addEventListener("visibilitychange", () => {
   if (!recording) return;
@@ -478,7 +503,21 @@ document.addEventListener("change", async e => {
   await dbPut(m).catch(()=>{});
 });
 
-load().then(()=>{ renderLists(); if (!idb) setStatus("Hinweis: Speichern auf diesem Gerät nicht möglich (privater Modus?).", true); });
+load().then(()=>{
+  renderLists();
+  if (!idb) setStatus("Hinweis: Speichern auf diesem Gerät nicht möglich (privater Modus?).", true);
+  const rid = S.get("resume","");
+  const m = rid && meetings.find(x => x.id === rid);
+  if (m){
+    finalText = m.text || ""; interim = ""; renderTx();
+    $("live-card").classList.remove("hidden");
+    $("title").value = m.titel.startsWith("Gespräch vom") ? "" : m.titel;
+    $("timer").textContent = fmtDur(m.duration || 0);
+    $("resume").textContent = "▶ Aufnahme fortsetzen";
+    $("resume").classList.remove("hidden");
+    setStatus("Zwischenstand gesichert. Tippe auf „Aufnahme fortsetzen“.", true);
+  } else if (rid) S.set("resume","");
+});
 if (!SR) setStatus("Dieser Browser kann nicht live mitschreiben (z. B. Edge auf dem iPhone). Bitte die Seite in Safari öffnen oder aus Safari zum Home-Bildschirm hinzufügen.", true);
 })();
 </script>
