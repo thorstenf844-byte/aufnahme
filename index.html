@@ -113,7 +113,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 7</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 8</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -153,7 +153,14 @@ $("test-key").onclick = async () => {
 
 /* ---------- Tabs ---------- */
 const tabs = ["rec","todo","arch","set"];
-function show(t){ tabs.forEach(k => { $("v-"+k).classList.toggle("hidden",k!==t); $("tab-"+k).classList.toggle("on",k===t); }); if(t==="todo"||t==="arch"){ closeDetail(); renderLists(); } }
+function resetRecView(){
+  if (recording || S.get("resume","")) return;
+  finalText = ""; interim = ""; renderTx();
+  $("live-card").classList.add("hidden"); $("live").classList.add("hidden"); $("live-sum").innerHTML = "";
+  $("result").innerHTML = ""; $("timer").textContent = "00:00"; $("title").value = "";
+  setStatus("Bereit");
+}
+function show(t){ if (t === "rec" && !$("v-rec").classList.contains("hidden")) {} else if (t === "rec") resetRecView(); tabs.forEach(k => { $("v-"+k).classList.toggle("hidden",k!==t); $("tab-"+k).classList.toggle("on",k===t); }); if(t==="todo"||t==="arch"){ closeDetail(); renderLists(); } }
 tabs.forEach(k => $("tab-"+k).onclick = () => show(k));
 
 /* ---------- Claude API ---------- */
@@ -450,7 +457,7 @@ function meetingHTML(m, busy){
   if (m.text) h += `<details class="card"><summary>Mitschrift</summary><div class="transcript" style="margin-top:8px">${esc(m.text)}</div></details>`;
   return h;
 }
-function renderResult(m, busy){ $("result").innerHTML = meetingHTML(m, busy); }
+function renderResult(m, busy){ $("result").innerHTML = meetingHTML(m, busy) + (busy ? "" : `<button class="btn" style="width:100%;margin-bottom:14px" data-new="1">＋ Neue Aufnahme</button>`); }
 
 function renderLists(){
   const open=[], done=[];
@@ -475,8 +482,9 @@ $("back").onclick = () => { closeDetail(); renderLists(); };
 
 let delArmed = null;
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-open],[data-analyze],[data-copy],[data-del]"); if (!t) return;
-  if (t.dataset.open) openDetail(t.dataset.open);
+  const t = e.target.closest("[data-open],[data-analyze],[data-copy],[data-del],[data-new]"); if (!t) return;
+  if (t.dataset.new){ resetRecView(); window.scrollTo(0,0); }
+  else if (t.dataset.open) openDetail(t.dataset.open);
   else if (t.dataset.analyze){
     const m = meetings.find(x=>x.id===t.dataset.analyze); if (!m) return;
     show("rec"); await analyze(m);
