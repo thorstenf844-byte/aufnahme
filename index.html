@@ -112,7 +112,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 2</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 3</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -239,7 +239,7 @@ function fmtDur(ms){ const s = Math.floor(ms/1000); const h = Math.floor(s/3600)
 function renderTx(){ $("tx-final").textContent = finalText; $("tx-interim").textContent = interim ? " " + interim : ""; const el=$("tx"); el.scrollTop = el.scrollHeight; }
 
 const STANDALONE = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
-let srFails = 0, srLastStart = 0, srGotResult = false, busy = false;
+let srFails = 0, srLastStart = 0, srGotResult = false, busy = false, busyAt = 0;
 
 function srFailedHint(code){
   const where = STANDALONE ? "In der Home-Bildschirm-App läuft die Mitschrift auf diesem iPhone nicht. Bitte den Recorder in Safari öffnen." : "Die Mitschrift ist ausgefallen.";
@@ -248,6 +248,7 @@ function srFailedHint(code){
 
 function startRecognition(){
   if (!SR || !recording) return;
+  if (rec){ try{ rec.onend = rec.onerror = rec.onresult = null; rec.abort(); }catch(e){} }
   try { rec = new SR(); } catch(e){ srFailedHint("init"); return; }
   rec.lang = "de-DE"; rec.continuous = true; rec.interimResults = true;
   rec.onresult = e => {
@@ -284,10 +285,11 @@ function startRecognition(){
 }
 
 async function start(){
-  if (busy) return;
+  if (busy && Date.now() - busyAt < 10000) return;
   if (!SR){ setStatus("Dieser Browser kann nicht live mitschreiben. Bitte die Seite in Safari öffnen (Edge auf dem iPhone unterstützt das nicht).", true); return; }
-  busy = true;
+  busy = true; busyAt = Date.now();
   try{
+    $("timer").textContent = "00:00";
     finalText = ""; interim = ""; chunks = []; lastLiveLen = 0; srFails = 0;
     $("result").innerHTML = ""; $("live").classList.add("hidden"); $("live-sum").innerHTML="";
     $("live-card").classList.remove("hidden"); renderTx();
@@ -307,7 +309,7 @@ async function start(){
         mr.start(5000);
       }catch(e){ mr = null; stream = null; }
     }
-    try{ wakeLock = await navigator.wakeLock?.request("screen"); }catch(e){}
+    try{ navigator.wakeLock?.request("screen").then(w=>{ if (recording) wakeLock = w; else w.release(); }).catch(()=>{}); }catch(e){}
     if (recording && hasKey() && $("live-on").checked) liveTimer = setInterval(liveSummary, LIVE_EVERY_MS);
   } finally { busy = false; }
 }
@@ -331,8 +333,9 @@ async function stop(){
   recording = false;
   $("rec").classList.remove("on"); $("rec").textContent = "Start"; setStatus("Wird beendet …");
   clearInterval(tick); clearInterval(liveTimer);
-  try{ rec && rec.stop(); }catch(e){ try{ rec.abort(); }catch(x){} }
-  setTimeout(()=>{ try{ rec && rec.abort(); }catch(e){} }, 1500);
+  const oldRec = rec;
+  try{ oldRec && oldRec.stop(); }catch(e){ try{ oldRec.abort(); }catch(x){} }
+  setTimeout(()=>{ try{ if (oldRec){ oldRec.onend = oldRec.onerror = oldRec.onresult = null; oldRec.abort(); } if (rec === oldRec) rec = null; }catch(e){} }, 1500);
   try{ wakeLock && wakeLock.release(); }catch(e){} wakeLock = null;
   const dur = Date.now() - t0;
   let audio = null;
@@ -348,6 +351,7 @@ async function stop(){
   const m = { id: String(Date.now()), created: t0, duration: dur, text, audio, titel: $("title").value.trim() || "Gespräch vom " + new Date(t0).toLocaleDateString("de-DE"),
               zusammenfassung:[], entscheidungen:[], meine_aufgaben:[], aufgaben_andere:[], offene_fragen:[], ausgewertet:false };
   meetings.unshift(m); await dbPut(m).catch(()=>{});
+  $("title").value = "";
   if (!text){ setStatus("Es wurde kein Text erkannt. Aufnahme gespeichert.", true); renderResult(m); return; }
   await analyze(m);
 }
