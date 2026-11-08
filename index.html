@@ -72,6 +72,7 @@ details summary{cursor:pointer;font-weight:600}
     <input type="text" id="title" placeholder="Titel (optional), z. B. Sitzung Personalausschuss">
     <div class="recwrap">
       <button class="recbtn" id="rec">Start</button>
+      <button class="btn hidden" id="resume" style="background:var(--rec);color:#fff">▶ Mitschrift fortsetzen</button>
       <div class="timer" id="timer">00:00</div>
       <div class="status" id="status">Bereit</div>
     </div>
@@ -112,7 +113,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 4</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 5</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -253,6 +254,7 @@ function startRecognition(){
   rec.lang = "de-DE"; rec.continuous = true; rec.interimResults = true;
   rec.onresult = e => {
     srGotResult = true; srFails = 0;
+    if (!$("resume").classList.contains("hidden")){ $("resume").classList.add("hidden"); setStatus("Nimmt wieder auf ✓"); }
     interim = "";
     for (let i = e.resultIndex; i < e.results.length; i++){
       const r = e.results[i];
@@ -340,12 +342,14 @@ async function stop(){
   try{ wakeLock && wakeLock.release(); }catch(e){} wakeLock = null;
   const dur = Date.now() - t0;
   let audio = null;
+  $("resume").classList.add("hidden");
   if (mr){
     await new Promise(r => { const to = setTimeout(r, 2500); mr.onstop = () => { clearTimeout(to); r(); }; try{ if (mr.state !== "inactive") mr.stop(); else r(); }catch(e){ r(); } });
     try{ stream?.getTracks().forEach(t=>t.stop()); }catch(e){}
     if (chunks.length) audio = new Blob(chunks, {type: mr.mimeType || mime || "audio/mp4"});
     mr = null; stream = null;
   }
+  if (!audio && chunks.length) audio = new Blob(chunks, {type: mime || "audio/mp4"});
   await new Promise(r=>setTimeout(r,600));      // letzte Erkennung abwarten
   if (interim){ finalText += (finalText?" ":"") + interim.trim(); interim=""; renderTx(); }
   const text = finalText.trim();
@@ -371,6 +375,14 @@ async function analyze(m){
   renderResult(m);
 }
 
+$("resume").onclick = () => {
+  if (!recording) return;
+  // Ton-Aufnahme beenden (bisheriger Ton bleibt erhalten), damit das Mikrofon für die Mitschrift frei ist
+  if (mr){ try{ if (mr.state !== "inactive") mr.stop(); }catch(e){} try{ stream?.getTracks().forEach(t=>t.stop()); }catch(e){} mr = null; stream = null; }
+  srFails = 0; visibleAt = Date.now();
+  startRecognition();
+  setStatus("Mitschrift wird fortgesetzt … (Ton ab hier nicht mehr gespeichert)");
+};
 $("rec").onclick = () => { if (recording) stop().catch(e=>setStatus("Fehler beim Beenden: "+e.message, true)); else start(); };
 window.addEventListener("beforeunload", e => { if (recording){ e.preventDefault(); e.returnValue=""; } });
 document.addEventListener("visibilitychange", () => {
@@ -380,9 +392,10 @@ document.addEventListener("visibilitychange", () => {
   const gap = hiddenAt ? Math.round((Date.now() - hiddenAt)/1000) : 0;
   if (gap >= 2){ finalText += (finalText ? " " : "") + "[… " + gap + " Sek. nicht mitgeschrieben – Bildschirm war aus …]"; renderTx(); }
   hiddenAt = 0; srFails = 0;
-  setStatus("Weiter geht’s – bitte den Bildschirm anlassen.", true);
+  setStatus("Bildschirm war aus – bitte auf „Mitschrift fortsetzen“ tippen.", true);
+  $("resume").classList.remove("hidden");
   try{ navigator.wakeLock?.request("screen").then(w=>{ wakeLock = w; }).catch(()=>{}); }catch(e){}
-  startRecognition();
+  startRecognition();   // Versuch ohne Tippen; iOS verlangt oft ein Antippen
 });
 
 /* ---------- Darstellung ---------- */
