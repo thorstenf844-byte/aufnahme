@@ -113,7 +113,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 6</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 7</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -279,8 +279,7 @@ function startRecognition(){
   rec.onend = () => {                  // iOS beendet die Erkennung regelmäßig – neu starten
     if (interim){ finalText += (finalText?" ":"") + interim.trim(); interim=""; renderTx(); }
     if (!recording || srFails >= 5) return;
-    if (Date.now() - srLastStart < 1500 && !srGotResult) srFails++;
-    const wait = Math.min(250 * Math.pow(2, srFails), 5000);
+    const wait = 250;
     setTimeout(()=>{ if (recording && srFails < 5){ srLastStart = Date.now(); srGotResult = false; try{ rec.start(); }catch(e){ srFails++; } } }, wait);
   };
   srLastStart = Date.now(); srGotResult = false;
@@ -303,7 +302,6 @@ async function start(cont){
     $("rec").classList.add("on"); $("rec").textContent = "Stopp";
     t0 = cont ? cont.created : Date.now(); tick = setInterval(()=> $("timer").textContent = fmtDur(Date.now()-t0), 500);
     setStatus(hasKey() && $("live-on").checked ? "Nimmt auf · Live-Zusammenfassung aktiv" : "Nimmt auf");
-    startRecognition();                              // Mitschrift zuerst
     if (!cont && $("keep-audio").checked && window.MediaRecorder && navigator.mediaDevices?.getUserMedia){
       try{
         const s2 = await Promise.race([navigator.mediaDevices.getUserMedia({audio:true}), new Promise((_,j)=>setTimeout(()=>j(new Error("timeout")),8000))]);
@@ -315,6 +313,7 @@ async function start(cont){
         mr.start(5000);
       }catch(e){ mr = null; stream = null; }
     }
+    if (recording) startRecognition();               // wie in Version 1: erst Ton, dann Mitschrift
     try{ navigator.wakeLock?.request("screen").then(w=>{ if (recording) wakeLock = w; else w.release(); }).catch(()=>{}); }catch(e){}
     if (recording && hasKey() && $("live-on").checked) liveTimer = setInterval(liveSummary, LIVE_EVERY_MS);
   } finally { busy = false; }
