@@ -121,11 +121,12 @@ details summary{cursor:pointer;font-weight:600}
     <p class="muted">Bekommst du unter console.anthropic.com → API Keys. Der Schlüssel bleibt nur auf diesem iPhone gespeichert und wird nur an Anthropic gesendet.</p>
     <label class="check"><input type="checkbox" id="keep-audio" checked> Audio mitspeichern</label>
     <label class="check"><input type="checkbox" id="live-on" checked> Live-Zusammenfassung während der Aufnahme</label>
+    <label class="check"><input type="checkbox" id="auto-clean" checked> Mitschrift nach dem Stopp automatisch aufbereiten</label>
     <div class="row" style="margin-top:14px"><button class="btn" id="save-set">Speichern</button><button class="btn ghost" id="test-key">Schlüssel testen</button></div>
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 14</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 15</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -149,12 +150,13 @@ $("people").value = S.get("people","");
 $("key").value = S.get("key","");
 $("keep-audio").checked = S.get("audio","1")==="1";
 $("live-on").checked = S.get("live","1")==="1";
+$("auto-clean").checked = S.get("autoclean","1")==="1";
 const hasKey = () => !!S.get("key","").trim();
 const refreshHint = () => $("setup-hint").classList.toggle("hidden", hasKey());
 refreshHint();
 $("save-set").onclick = () => {
   S.set("name",$("name").value.trim()||"Thorsten"); S.set("key",$("key").value.trim());
-  S.set("audio",$("keep-audio").checked?"1":"0"); S.set("live",$("live-on").checked?"1":"0");
+  S.set("audio",$("keep-audio").checked?"1":"0"); S.set("live",$("live-on").checked?"1":"0"); S.set("autoclean",$("auto-clean").checked?"1":"0");
   $("set-status").textContent = "Gespeichert."; refreshHint();
 };
 $("test-key").onclick = async () => {
@@ -468,6 +470,11 @@ async function stop(){
   if (!recording) return;
   const m = await finishSession(false);
   if (!m.text){ setStatus("Es wurde kein Text erkannt. Aufnahme gespeichert.", true); renderResult(m); return; }
+  if (hasKey() && S.get("autoclean","1") === "1"){
+    renderResult(m, true);
+    try{ await cleanTranscript(m, (i, n) => setStatus(n > 1 ? `Mitschrift wird aufbereitet … Teil ${i} von ${n}` : "Mitschrift wird aufbereitet …")); }
+    catch(e){ setStatus("Aufbereiten fehlgeschlagen – Auswertung mit Original-Mitschrift.", true); }
+  }
   await analyze(m);
 }
 
