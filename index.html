@@ -125,7 +125,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 12</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 13</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -474,7 +474,8 @@ async function stop(){
 async function runAnalysis(m){
   if (!hasKey()) return "Kein API-Schlüssel eingetragen (⚙︎).";
   try{
-    const r = normalize(parseJSON(await askClaude(finalPrompt(m.text.slice(0,400000), S.get("name","Thorsten"), m.teilnehmer), 4000)));
+    const src = (m.textClean && m.textCleanFor === (m.text || "").length) ? m.textClean : m.text;
+    const r = normalize(parseJSON(await askClaude(finalPrompt(src.slice(0,400000), S.get("name","Thorsten"), m.teilnehmer), 4000)));
     const keepTitle = m.ausgewertet || !/^Gespräch vom/.test(m.titel) ? m.titel : "";
     const done = new Set((m.meine_aufgaben || []).filter(a => a.done).map(a => a.aufgabe));
     r.meine_aufgaben.forEach(a => { if (done.has(a.aufgabe)) a.done = true; });
@@ -565,6 +566,51 @@ document.addEventListener("visibilitychange", () => {
 });
 
 
+
+/* ---------- Mitschrift aufbereiten ---------- */
+function splitChunks(text, max){
+  const parts = [], sents = String(text).replace(/\s+/g, " ").trim().split(/(?<=[.!?…\]])\s+/);
+  let cur = "";
+  for (const x of sents){
+    if (cur && (cur + " " + x).length > max){ parts.push(cur); cur = x; }
+    else cur = cur ? cur + " " + x : x;
+    while (cur.length > max * 1.5){ const cut = cur.lastIndexOf(" ", max); const at = cut > max / 2 ? cut : max; parts.push(cur.slice(0, at)); cur = cur.slice(at).trim(); }
+  }
+  if (cur) parts.push(cur);
+  return parts;
+}
+function cleanPrompt(chunk, prev, people, i, n){
+  return `Du bekommst einen Abschnitt (${i} von ${n}) einer automatischen Spracherkennung eines deutschen Gesprächs. Sie hat keine Satzzeichen, schlechte Groß-/Kleinschreibung und Hörfehler.
+Aufgabe: Gib GENAU DIESEN Abschnitt als sauberen, gut lesbaren deutschen Text zurück:
+- Rechtschreibung, Groß-/Kleinschreibung und Zeichensetzung korrigieren, Sätze bilden.
+- Offensichtliche Hörfehler aus dem Zusammenhang korrigieren (z. B. Zahlen, Fachbegriffe).${(people || []).length ? `\n- Namen in dieser Schreibweise verwenden: ${people.join(", ")}.` : ""}
+- Bei Themenwechseln einen Absatz (Leerzeile) einfügen.
+- Nichts zusammenfassen, nichts weglassen, nichts hinzuerfinden, keine Sprecher erfinden. Füllwörter wie „äh“ dürfen weg.
+- Stellen, die keinen Sinn ergeben, mit [unverständlich] markieren. Markierungen in eckigen Klammern unverändert lassen.
+Antworte NUR mit dem bereinigten Text, ohne Vorbemerkung.
+${prev ? `\nZum Verständnis – Ende des vorherigen Abschnitts (NICHT wiederholen): „…${prev}“\n` : ""}
+ABSCHNITT:
+"""
+${chunk}
+"""`;
+}
+async function cleanTranscript(m, onProgress){
+  const chunks = splitChunks(m.text || "", 6000), out = [];
+  for (let i = 0; i < chunks.length; i++){
+    onProgress && onProgress(i + 1, chunks.length);
+    const prev = i ? chunks[i - 1].slice(-300) : "";
+    let txt = "";
+    for (let attempt = 0; attempt < 2 && !txt; attempt++){
+      try{ txt = (await askClaude(cleanPrompt(chunks[i], prev, m.teilnehmer, i + 1, chunks.length), 8000)).trim(); }
+      catch(e){ if (attempt) throw e; await new Promise(r => setTimeout(r, 3000)); }
+    }
+    out.push(txt.replace(/^["„“]+|["“”]+$/g, ""));
+  }
+  m.textClean = out.join("\n\n");
+  m.textCleanFor = (m.text || "").length;
+  await dbPut(m).catch(()=>{});
+}
+
 /* ---------- PDF (eigener kleiner Generator, ohne fremde Bibliothek) ---------- */
 const PDFW = {"n": [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584, 761, 556, 0, 222, 556, 333, 1000, 556, 556, 333, 1000, 667, 333, 1000, 0, 611, 0, 0, 222, 222, 333, 333, 350, 556, 1000, 333, 1000, 500, 333, 944, 0, 500, 667, 278, 333, 556, 556, 556, 556, 260, 556, 333, 737, 370, 556, 584, 333, 737, 333, 400, 584, 333, 333, 333, 556, 537, 278, 333, 333, 365, 556, 834, 834, 834, 611, 667, 667, 667, 667, 667, 667, 1000, 722, 667, 667, 667, 667, 278, 278, 278, 278, 722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611, 556, 556, 556, 556, 556, 556, 889, 500, 556, 556, 556, 556, 278, 278, 278, 278, 556, 556, 556, 556, 556, 556, 556, 584, 611, 556, 556, 556, 556, 500, 556, 500], "b": [278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584, 761, 556, 0, 278, 556, 500, 1000, 556, 556, 333, 1000, 667, 333, 1000, 0, 611, 0, 0, 278, 278, 500, 500, 350, 556, 1000, 333, 1000, 556, 333, 944, 0, 500, 667, 278, 333, 556, 556, 556, 556, 280, 556, 333, 737, 370, 556, 584, 333, 737, 333, 400, 584, 333, 333, 333, 611, 556, 278, 333, 333, 365, 556, 834, 834, 834, 611, 722, 722, 722, 722, 722, 722, 1000, 722, 667, 667, 667, 667, 278, 278, 278, 278, 722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611, 556, 556, 556, 556, 556, 556, 889, 556, 556, 556, 556, 556, 278, 278, 278, 278, 611, 611, 611, 611, 611, 611, 611, 584, 611, 611, 611, 611, 611, 556, 611, 556]};
 const CP1252 = {"€":128,"‚":130,"ƒ":131,"„":132,"…":133,"†":134,"‡":135,"ˆ":136,"‰":137,"Š":138,"‹":139,"Œ":140,"Ž":142,"‘":145,"’":146,"“":147,"”":148,"•":149,"–":150,"—":151,"˜":152,"™":153,"š":154,"›":155,"œ":156,"ž":158,"Ÿ":159};
@@ -608,7 +654,7 @@ function pdfStr(codes){
   }
   return s + ")";
 }
-function buildPdf(m){
+function buildPdf(m, full){
   const PW = 595, PH = 842, ML = 56, MR = 56, MT = 60, MB = 60, maxW = PW - ML - MR;
   const blocks = [];      // {text,font,size,indent,gap,color,bullet}
   const add = (text, o = {}) => blocks.push(Object.assign({text, font:"n", size:10.5, indent:0, gap:0, color:0, bullet:""}, o));
@@ -635,6 +681,11 @@ function buildPdf(m){
   } else {
     sec("Mitschrift (noch nicht ausgewertet)");
     String(m.text || "").split(/\n+/).forEach(p => add(p, {gap:4}));
+  }
+  if (full && m.ausgewertet && m.text){
+    const clean = m.textClean && m.textCleanFor === (m.text || "").length;
+    sec(clean ? "Mitschrift" : "Mitschrift (unbearbeitet, automatische Spracherkennung)");
+    String(clean ? m.textClean : m.text).split(/\n\s*\n|\n/).filter(x => x.trim()).forEach(p => add(p.trim(), {gap:6}));
   }
   add("Automatisch erstellt mit dem Gesprächs-Recorder – Inhalte bitte vor dem Versand prüfen.", {size:8, color:0.5, gap:22});
 
@@ -678,12 +729,12 @@ function buildPdf(m){
   const bytes = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
   return new Blob([bytes], {type: "application/pdf"});
 }
-function pdfName(m){
+function pdfName(m, full){
   const d = new Date(m.created).toLocaleDateString("de-DE");
-  return ("Protokoll " + m.titel + " " + d).replace(/[\\/:*?"<>|]+/g, "-").slice(0, 90) + ".pdf";
+  return ((full ? "Protokoll komplett " : "Protokoll ") + m.titel + " " + d).replace(/[\\/:*?"<>|]+/g, "-").slice(0, 90) + ".pdf";
 }
-async function sharePdf(m, note){
-  const blob = buildPdf(m), name = pdfName(m);
+async function sharePdf(m, note, full){
+  const blob = buildPdf(m, full), name = pdfName(m, full);
   const file = new File([blob], name, {type: "application/pdf"});
   try{
     if (navigator.canShare && navigator.canShare({files: [file]})){ await navigator.share({files: [file], title: m.titel}); return; }
@@ -721,10 +772,13 @@ function meetingHTML(m, busy){
   if (m.audio) h += `<div class="card"><h2>Aufnahme</h2><audio controls preload="none" src="${audioURL(m)}"></audio><div class="row" style="margin-top:8px"><a class="btn ghost small" href="${audioURL(m)}" download="${esc(m.titel)}.${ext}">Audio sichern</a></div></div>`;
   (m.audioParts || []).forEach((b, i) => { const u = URL.createObjectURL(b); h += `<div class="card"><h2>Aufnahme – Teil ${i + 2}</h2><audio controls preload="none" src="${u}"></audio><div class="row" style="margin-top:8px"><a class="btn ghost small" href="${u}" download="${esc(m.titel)} Teil ${i + 2}.${ext}">Audio sichern</a></div></div>`; });
   if (m.laufend && !(recording && m.id === contId)) h += `<div class="card"><p class="muted">Diese Aufnahme wurde nicht regulär beendet (Seite geschlossen oder neu geladen). Der Text bis dahin ist gesichert.</p></div>`;
-  if (m.text) h += `<details class="card"><summary>Mitschrift</summary><div class="transcript" style="margin-top:8px">${esc(m.text)}</div></details>`;
+  const cleanOk = m.textClean && m.textCleanFor === (m.text || "").length;
+  if (cleanOk) h += `<details class="card"><summary>Mitschrift (aufbereitet)</summary><div class="transcript" style="margin-top:8px;max-height:none">${esc(m.textClean)}</div></details>`;
+  if (m.text) h += `<details class="card"><summary>${cleanOk ? "Mitschrift (Original)" : "Mitschrift"}</summary><div class="transcript" style="margin-top:8px">${esc(m.text)}</div></details>`;
   if (!busy && (m.text || m.ausgewertet)) h += `<div class="card"><h2>Weitergeben</h2><div class="row">
       ${navigator.share ? `<button class="btn ghost small" data-share="${esc(m.id)}">Als Text teilen …</button>` : ""}
-      <button class="btn small" data-pdf="${esc(m.id)}">Als PDF</button>
+      <button class="btn small" data-pdf="${esc(m.id)}">PDF: Protokoll</button>
+      ${m.ausgewertet && m.text ? `<button class="btn small" data-pdf="${esc(m.id)}" data-full="1">PDF: komplett</button>` : ""}
       <button class="btn ghost small" data-cpy="${esc(m.id)}" data-what="prot">Protokoll kopieren</button>
       <button class="btn ghost small" data-cpy="${esc(m.id)}" data-what="text">Mitschrift kopieren</button>
     </div><div class="muted cp-note" style="margin-top:6px"></div></div>`;
@@ -750,7 +804,9 @@ function openDetail(id){
   const m = meetings.find(x=>x.id===id); if(!m) return; openId=id;
   $("detail").innerHTML = meetingHTML(m) + (m.text ? `<div class="card"><h2>Teilnehmer &amp; neu auswerten</h2>
       <input type="text" id="re-people" value="${esc((m.teilnehmer||[]).join(", "))}" placeholder="z. B. Peter Meyer, Maria Schulz">
-      <div class="row" style="margin-top:10px"><button class="btn small" data-reanalyze="${esc(m.id)}">${m.ausgewertet ? "Neu auswerten" : "Auswerten"}</button><span class="muted" id="re-note"></span></div></div>` : "")
+      <div class="row" style="margin-top:10px"><button class="btn small" data-reanalyze="${esc(m.id)}">${m.ausgewertet ? "Neu auswerten" : "Auswerten"}</button><span class="muted" id="re-note"></span></div></div>
+      <div class="card"><h2>Mitschrift aufbereiten</h2><p class="muted" style="margin:0 0 10px">Claude korrigiert Rechtschreibung, Groß-/Kleinschreibung und Satzzeichen, bildet Sätze und Absätze. Inhalt bleibt unverändert; Unverständliches wird markiert.</p>
+      <div class="row"><button class="btn small" data-clean="${esc(m.id)}">${(m.textClean && m.textCleanFor === (m.text || "").length) ? "Erneut aufbereiten" : "Jetzt aufbereiten"}</button><span class="muted" id="cl-note"></span></div></div>` : "")
     + `<button class="btn ghost" data-del="${esc(m.id)}">Gespräch löschen</button>`;
   $("arch-card").classList.add("hidden"); $("arch-detail").classList.remove("hidden"); window.scrollTo(0,0);
 }
@@ -759,16 +815,32 @@ $("back").onclick = () => { closeDetail(); renderLists(); };
 
 let delArmed = null;
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-open],[data-analyze],[data-copy],[data-del],[data-new],[data-cpy],[data-share],[data-reanalyze],[data-pdf]"); if (!t) return;
+  const t = e.target.closest("[data-open],[data-analyze],[data-copy],[data-del],[data-new],[data-cpy],[data-share],[data-reanalyze],[data-pdf],[data-clean]"); if (!t) return;
+  if (t.dataset.clean){
+    const m = meetings.find(x=>x.id===t.dataset.clean); if (!m) return;
+    if (!hasKey()){ $("cl-note").textContent = "Erst API-Schlüssel unter ⚙︎ eintragen."; return; }
+    const pv = $("re-people")?.value; if (pv !== undefined) m.teilnehmer = parsePeople(pv);
+    t.disabled = true;
+    try{
+      await cleanTranscript(m, (i, n) => { const el = $("cl-note"); if (el) el.textContent = n > 1 ? `Wird aufbereitet … Teil ${i} von ${n}` : "Wird aufbereitet …"; });
+      const el = $("cl-note"); if (el) el.textContent = "Aufbereitet ✓ – Auswertung wird aktualisiert …";
+      if (m.ausgewertet) await runAnalysis(m);
+      openDetail(m.id); renderLists();
+      const d = document.querySelector("#detail details"); if (d) d.open = false;
+      $("cl-note").textContent = "Fertig ✓ – siehe „Mitschrift (aufbereitet)“.";
+    }catch(err){ const el = $("cl-note"); if (el) el.textContent = "Fehler: " + err.message; t.disabled = false; }
+    return;
+  }
   if (t.dataset.pdf){
     const m = meetings.find(x=>x.id===t.dataset.pdf); if (!m) return;
     const note = t.closest(".card")?.querySelector(".cp-note");
-    try{ await sharePdf(m, note); }catch(err){ if (note) note.textContent = "PDF konnte nicht erstellt werden: " + err.message; }
+    try{ await sharePdf(m, note, t.dataset.full === "1"); }catch(err){ if (note) note.textContent = "PDF konnte nicht erstellt werden: " + err.message; }
     return;
   }
   if (t.dataset.cpy){
     const m = meetings.find(x=>x.id===t.dataset.cpy); if (!m) return;
-    const txt = t.dataset.what === "text" ? m.titel + "\n" + fmtDate(m.created) + "\n\n" + (m.text || "") : protocolText(m);
+    const cleanOk = m.textClean && m.textCleanFor === (m.text || "").length;
+    const txt = t.dataset.what === "text" ? m.titel + "\n" + fmtDate(m.created) + "\n\n" + ((cleanOk ? m.textClean : m.text) || "") : protocolText(m);
     const note = t.closest(".card")?.querySelector(".cp-note");
     try{ await navigator.clipboard.writeText(txt); if (note) note.textContent = "Kopiert – jetzt z. B. in Mail oder WhatsApp einfügen."; }
     catch(err){ if (note) note.textContent = "Kopieren nicht möglich."; }
