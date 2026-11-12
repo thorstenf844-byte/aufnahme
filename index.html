@@ -126,7 +126,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 19</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 20</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -835,8 +835,7 @@ function meetingHTML(m, busy){
   if (m.text) h += `<details class="card"><summary>${cleanOk ? "Mitschrift (Original)" : "Mitschrift"}</summary><div class="transcript" style="margin-top:8px">${esc(m.text)}</div></details>`;
   if (!busy && (m.text || m.ausgewertet)) h += `<div class="card"><h2>Weitergeben</h2><div class="row">
       ${navigator.share ? `<button class="btn ghost small" data-share="${esc(m.id)}">Als Text teilen …</button>` : ""}
-      <button class="btn small" data-pdf="${esc(m.id)}">PDF: Protokoll</button>
-      ${m.ausgewertet && m.text ? `<button class="btn small" data-pdf="${esc(m.id)}" data-full="1">PDF: komplett</button>` : ""}
+      <button class="btn small" data-pdf="${esc(m.id)}">Als PDF</button>
       <button class="btn ghost small" data-cpy="${esc(m.id)}" data-what="prot">Protokoll kopieren</button>
       <button class="btn ghost small" data-cpy="${esc(m.id)}" data-what="text">Mitschrift kopieren</button>
     </div><div class="muted cp-note" style="margin-top:6px"></div></div>`;
