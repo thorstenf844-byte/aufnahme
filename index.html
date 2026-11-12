@@ -126,7 +126,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 15</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 16</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -661,6 +661,13 @@ function pdfStr(codes){
   }
   return s + ")";
 }
+// Zeile ausgeben; Text nach einem €-Zeichen wird fest positioniert, weil manche Anzeigen (iPhone) dem € keine Breite geben
+function pdfLine(ops, codes, x, y, f, font, size, color){
+  let run = [], cx = x;
+  const flush = () => { if (run.length){ ops.push(`${color} g BT /${f} ${size} Tf ${cx.toFixed(2)} ${y.toFixed(2)} Td ${pdfStr(run)} Tj ET`); cx += pdfWidth(run, font, size); run = []; } };
+  for (const c of codes){ run.push(c); if (c === 128) flush(); }
+  flush();
+}
 function buildPdf(m, full){
   const PW = 595, PH = 842, ML = 56, MR = 56, MT = 60, MB = 60, maxW = PW - ML - MR;
   const blocks = [];      // {text,font,size,indent,gap,color,bullet}
@@ -705,9 +712,11 @@ function buildPdf(m, full){
   for (let k = 0; k < prep.length; k++){
     const b = prep[k], top = ops.length === 0, gap = top ? 0 : b.gap, h = hOf(b);
     let need = gap + h;
-    if (b.keep && prep[k + 1]){                       // Überschrift + Anfang (bzw. ganzer kurzer) nächster Block
-      const n = prep[k + 1];
-      need += n.gap + (hOf(n) <= usable * 0.4 ? hOf(n) : 2 * n.lh);
+    if (b.keep){                                      // Überschriften-Kette + Anfang (bzw. ganzer kurzer) erster Inhaltsblock
+      let j = k + 1;
+      while (prep[j] && prep[j].keep){ need += prep[j].gap + hOf(prep[j]); j++; }
+      const n = prep[j];
+      if (n) need += n.gap + (hOf(n) <= usable * 0.4 ? hOf(n) : 2 * n.lh);
     }
     if (!top && need > y - MB){
       if (b.keep || h <= usable * 0.4) newPage();      // kurze Blöcke komplett auf die nächste Seite
@@ -721,7 +730,7 @@ function buildPdf(m, full){
       }
       y -= b.lh;
       const f = b.font === "b" ? "F2" : "F1";
-      ops.push(`${b.color} g BT /${f} ${b.size} Tf ${ML + b.indent} ${y.toFixed(2)} Td ${pdfStr(pdfBytes(ln))} Tj ET`);
+      pdfLine(ops, pdfBytes(ln), ML + b.indent, y, f, b.font, b.size, b.color);
       if (i === 0 && b.bullet) ops.push(`${b.color} g BT /F1 ${b.size} Tf ${ML + b.indent - 11} ${y.toFixed(2)} Td ${pdfStr(pdfBytes(b.bullet))} Tj ET`);
     });
   }
@@ -751,6 +760,7 @@ function buildPdf(m, full){
   const bytes = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
   return new Blob([bytes], {type: "application/pdf"});
 }
+window.__gr = { buildPdf };   // nur für automatische Tests
 function pdfName(m, full){
   const d = new Date(m.created).toLocaleDateString("de-DE");
   return ((full ? "Protokoll komplett " : "Protokoll ") + m.titel + " " + d).replace(/[\\/:*?"<>|]+/g, "-").slice(0, 90) + ".pdf";
