@@ -125,7 +125,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 13</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 14</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -662,7 +662,7 @@ function buildPdf(m, full){
   add(m.titel, {font:"b", size:17});
   add(fmtDate(m.created) + " · Dauer " + fmtDur(m.duration || 0), {size:9.5, color:0.4, gap:4});
   if ((m.teilnehmer || []).length) add("Teilnehmer: " + m.teilnehmer.join(", "), {size:9.5, color:0.4, gap:2});
-  const sec = t => add(t, {font:"b", size:12, gap:16});
+  const sec = t => add(t, {font:"b", size:12, gap:16, keep:true});
   const bullets = xs => xs.forEach(x => add(x, {indent:14, bullet:"•", gap:3}));
   if (m.ausgewertet){
     sec("Zusammenfassung"); bullets(m.zusammenfassung);
@@ -673,7 +673,7 @@ function buildPdf(m, full){
     if (g.size){
       sec("Aufgaben");
       [...g.keys()].sort((x, y) => (x === "unklar") - (y === "unklar") || x.localeCompare(y, "de")).forEach(k => {
-        add(k === "unklar" ? "Wer? (unklar)" : k, {font:"b", size:10.5, gap:8});
+        add(k === "unklar" ? "Wer? (unklar)" : k, {font:"b", size:10.5, gap:8, keep:true});
         g.get(k).forEach(a => add(a.aufgabe + (a.frist ? " (bis " + a.frist + ")" : "") + (a.done ? " – erledigt" : ""), {indent:14, bullet:"–", gap:3}));
       });
     }
@@ -689,16 +689,30 @@ function buildPdf(m, full){
   }
   add("Automatisch erstellt mit dem Gesprächs-Recorder – Inhalte bitte vor dem Versand prüfen.", {size:8, color:0.5, gap:22});
 
-  // Seiten setzen
+  // Seiten setzen: Absätze/Aufzählungspunkte nicht zerreißen, Überschriften nie allein am Seitenende
   const pages = []; let ops = [], y = PH - MT;
+  const usable = PH - MT - MB;
   const newPage = () => { pages.push(ops); ops = []; y = PH - MT; };
-  for (const b of blocks){
-    const lh = b.size * 1.35, lines = pdfWrap(b.text, b.font, b.size, maxW - b.indent);
-    y -= b.gap;
-    if (y - lh < MB && ops.length) newPage();
-    lines.forEach((ln, i) => {
-      if (y - lh < MB){ newPage(); }
-      y -= lh;
+  const prep = blocks.map(b => Object.assign({}, b, {lh: b.size * 1.35, lines: pdfWrap(b.text, b.font, b.size, maxW - b.indent)}));
+  const hOf = b => b.lines.length * b.lh;
+  for (let k = 0; k < prep.length; k++){
+    const b = prep[k], top = ops.length === 0, gap = top ? 0 : b.gap, h = hOf(b);
+    let need = gap + h;
+    if (b.keep && prep[k + 1]){                       // Überschrift + Anfang (bzw. ganzer kurzer) nächster Block
+      const n = prep[k + 1];
+      need += n.gap + (hOf(n) <= usable * 0.4 ? hOf(n) : 2 * n.lh);
+    }
+    if (!top && need > y - MB){
+      if (b.keep || h <= usable * 0.4) newPage();      // kurze Blöcke komplett auf die nächste Seite
+      else if (y - MB - gap < 3 * b.lh) newPage();     // lange Absätze erst teilen, wenn mind. 3 Zeilen passen
+    }
+    if (ops.length) y -= b.gap;
+    b.lines.forEach((ln, i) => {
+      if (y - b.lh < MB){
+        // bei langen Absätzen keine einzelne Zeile allein auf der neuen Seite lassen
+        newPage();
+      }
+      y -= b.lh;
       const f = b.font === "b" ? "F2" : "F1";
       ops.push(`${b.color} g BT /${f} ${b.size} Tf ${ML + b.indent} ${y.toFixed(2)} Td ${pdfStr(pdfBytes(ln))} Tj ET`);
       if (i === 0 && b.bullet) ops.push(`${b.color} g BT /F1 ${b.size} Tf ${ML + b.indent - 11} ${y.toFixed(2)} Td ${pdfStr(pdfBytes(b.bullet))} Tj ET`);
@@ -711,8 +725,9 @@ function buildPdf(m, full){
   // PDF-Objekte schreiben
   const objs = [];
   objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
-  objs[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
-  objs[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
+  // Breiten mitgeben, sonst setzen manche Anzeigen (z. B. iPhone) das €-Zeichen zu schmal
+  objs[3] = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 255 /Widths [${PDFW.n.join(" ")}] >>`;
+  objs[4] = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 255 /Widths [${PDFW.b.join(" ")}] >>`;
   const kids = [];
   pages.forEach((p, i) => {
     const pid = 5 + i * 2, cid = pid + 1, content = p.join("\n");
@@ -834,7 +849,22 @@ document.addEventListener("click", async e => {
   if (t.dataset.pdf){
     const m = meetings.find(x=>x.id===t.dataset.pdf); if (!m) return;
     const note = t.closest(".card")?.querySelector(".cp-note");
-    try{ await sharePdf(m, note, t.dataset.full === "1"); }catch(err){ if (note) note.textContent = "PDF konnte nicht erstellt werden: " + err.message; }
+    const full = t.dataset.full === "1";
+    const cleanOk = m.textClean && m.textCleanFor === (m.text || "").length;
+    if (full && m.text && !cleanOk){
+      if (!hasKey()){ if (note) note.textContent = "Für die aufbereitete Mitschrift erst API-Schlüssel unter ⚙︎ eintragen."; return; }
+      t.disabled = true;
+      try{
+        await cleanTranscript(m, (i, n) => { if (note) note.textContent = n > 1 ? `Mitschrift wird aufbereitet … Teil ${i} von ${n}` : "Mitschrift wird aufbereitet …"; });
+        if (m.ausgewertet){ if (note) note.textContent = "Auswertung wird aktualisiert …"; await runAnalysis(m); }
+        const inDetail = !!t.closest("#detail");
+        if (inDetail){ openDetail(m.id); renderLists(); } else renderResult(m);
+        const n2 = document.querySelector((inDetail ? "#detail" : "#result") + " [data-pdf][data-full]")?.closest(".card")?.querySelector(".cp-note");
+        if (n2) n2.textContent = "Mitschrift aufbereitet ✓ – jetzt noch einmal auf „PDF: komplett“ tippen.";
+      }catch(err){ if (note) note.textContent = "Aufbereiten fehlgeschlagen: " + err.message; t.disabled = false; }
+      return;
+    }
+    try{ await sharePdf(m, note, full); }catch(err){ if (note) note.textContent = "PDF konnte nicht erstellt werden: " + err.message; }
     return;
   }
   if (t.dataset.cpy){
