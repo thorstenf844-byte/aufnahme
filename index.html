@@ -126,7 +126,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 17</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 18</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -209,12 +209,11 @@ Die Mitschrift enthält KEINE Sprecherangaben – du weißt nicht, wer gerade sp
 "Ich mache das" ohne Namen kann von jeder Person stammen: nur dann "${me}" zuordnen, wenn es klar ist; sonst "wer":"unklar".` : `
 Ordne mir Aufgaben zu, die ich übernehme, die mir zugewiesen werden oder die ich ankündige ("ich mache…", "ich kümmere mich…"). Ist unklar, wer etwas tun soll, und betrifft es plausibel mich, nimm es auf und setze "unsicher": true.`;
   const words = String(text).split(/\s+/).filter(Boolean).length;
-  const nThemes = Math.max(2, Math.min(15, Math.round(words / 700)));
   return `Du bist ein erfahrener Protokollführer. Erstelle aus dem folgenden Gesprächs-Transkript (automatische Spracherkennung, kann Fehler enthalten) ein AUSFÜHRLICHES Ergebnisprotokoll auf Deutsch.
-Das Transkript hat ca. ${words} Wörter. Das Protokoll soll dem Umfang des Gesprächs gerecht werden: Wer nicht dabei war, muss danach verstehen, was besprochen wurde und warum.
-- "kurzfassung": 3–6 Sätze/Punkte als Überblick.
-- "themen": etwa ${nThemes} Themenblöcke in der Reihenfolge des Gesprächs, jeweils mit aussagekräftigem Titel und 3–10 Stichpunkten in ganzen Sätzen. Konkrete Inhalte festhalten: Zahlen, Beispiele, Abläufe, Begriffe, Argumente, Bedenken, Varianten, Begründungen. "ergebnis": was zu dem Thema festgehalten/entschieden wurde (leer, wenn nichts).
-- Keine Wiederholungen zwischen den Themen. Fachbegriffe aus dem Gespräch beibehalten.
+Das Transkript hat ca. ${words} Wörter. Es gibt KEINE feste Anzahl: Nimm so viele Themen und Stichpunkte, wie der Inhalt erfordert – lieber vollständig als knapp. Wer nicht dabei war, muss danach verstehen, was besprochen wurde und warum.
+- "kurzfassung": kurzer Überblick über das ganze Gespräch.
+- "themen": alle besprochenen Themen in der Reihenfolge des Gesprächs, jeweils mit aussagekräftigem Titel und so vielen Stichpunkten in ganzen Sätzen wie nötig. Konkrete Inhalte festhalten: Zahlen, Beispiele, Abläufe, Begriffe, Argumente, Bedenken, Varianten, Begründungen. "ergebnis": was zu dem Thema festgehalten/entschieden wurde (leer, wenn nichts).
+- Keine Wiederholungen zwischen den Themen. Fachbegriffe aus dem Gespräch beibehalten. Nichts erfinden.
 Ich bin "${me}" und habe aufgenommen.${peopleTxt}
 "meine_aufgaben" enthält nur Aufgaben von ${me}; Aufgaben aller anderen (oder "unklar") kommen in "aufgaben_andere".
 Erfinde nichts. Fristen nur, wenn sie genannt werden, sonst "".
