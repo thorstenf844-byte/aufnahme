@@ -70,6 +70,8 @@ details summary{cursor:pointer;font-weight:600}
   <div class="card hidden" id="setup-hint"><b>Einmalig einrichten:</b> Tippe oben auf ⚙︎ und trage deinen Claude-API-Schlüssel ein. Ohne Schlüssel wird nur aufgenommen und mitgeschrieben.</div>
   <div class="card">
     <input type="text" id="title" placeholder="Titel (optional), z. B. Sitzung Personalausschuss">
+    <input type="text" id="people" placeholder="Teilnehmer (optional), z. B. Peter Meyer, Maria Schulz" style="margin-top:8px">
+    <div class="muted" style="margin-top:4px">Tipp: Aufgaben mit Namen ansprechen oder am Ende kurz zusammenfassen („Peter macht …, Maria …“).</div>
     <div class="recwrap">
       <button class="recbtn" id="rec">Start</button>
       <button class="btn hidden" id="alarm" style="background:#b3261e;color:#fff;animation:pulse 1.6s infinite;white-space:normal">⚠</button>
@@ -114,7 +116,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 9</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 10</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -134,6 +136,7 @@ const S = {
   set(k, v){ try{ localStorage.setItem("gr-"+k, v); }catch(e){} }
 };
 $("name").value = S.get("name","Thorsten");
+$("people").value = S.get("people","");
 $("key").value = S.get("key","");
 $("keep-audio").checked = S.get("audio","1")==="1";
 $("live-on").checked = S.get("live","1")==="1";
@@ -187,12 +190,19 @@ function parseJSON(t){
   if (s<0||e<0) throw new Error("Antwort nicht lesbar.");
   return JSON.parse(t.slice(s,e+1));
 }
-function finalPrompt(text, me){
+function finalPrompt(text, me, people){
+  const list = (people || []).filter(Boolean);
+  const peopleTxt = list.length ? `
+TEILNEHMER (richtige Schreibweise): ${list.join(", ")}.
+Die Mitschrift enthält KEINE Sprecherangaben – du weißt nicht, wer gerade spricht. Ordne Aufgaben einer Person zu, wenn sie im Text mit Namen angesprochen oder genannt wird ("Peter, machst du…", "…übernimmt Maria", Schlussrunde mit Aufgabenverteilung). Falsch erkannte Namen auf die Schreibweise der Teilnehmerliste korrigieren (z. B. "Maier" → "Meyer"), auch wenn nur Vor- oder Nachname fällt.
+"Ich mache das" ohne Namen kann von jeder Person stammen: nur dann "${me}" zuordnen, wenn es klar ist; sonst "wer":"unklar".` : `
+Ordne mir Aufgaben zu, die ich übernehme, die mir zugewiesen werden oder die ich ankündige ("ich mache…", "ich kümmere mich…"). Ist unklar, wer etwas tun soll, und betrifft es plausibel mich, nimm es auf und setze "unsicher": true.`;
   return `Du bist ein Protokoll-Assistent. Werte das folgende Gesprächs-Transkript (automatische Spracherkennung, kann Fehler enthalten) auf Deutsch aus.
-Ich bin "${me}" und habe aufgenommen. Ordne mir Aufgaben zu, die ich übernehme, die mir zugewiesen werden oder die ich ankündige ("ich mache…", "ich kümmere mich…"). Ist unklar, wer etwas tun soll, und betrifft es plausibel mich, nimm es auf und setze "unsicher": true.
+Ich bin "${me}" und habe aufgenommen.${peopleTxt}
+"meine_aufgaben" enthält nur Aufgaben von ${me}; Aufgaben aller anderen (oder "unklar") kommen in "aufgaben_andere".
 Erfinde nichts. Fristen nur, wenn sie genannt werden, sonst "".
 Antworte NUR mit JSON:
-{"titel":"kurzer Titel","zusammenfassung":["3-8 Kernpunkte"],"entscheidungen":["…"],"meine_aufgaben":[{"aufgabe":"mit Verb beginnend","frist":"","prioritaet":"hoch|normal","unsicher":false}],"aufgaben_andere":[{"wer":"","aufgabe":"","frist":""}],"offene_fragen":["…"]}
+{"titel":"kurzer Titel","zusammenfassung":["3-8 Kernpunkte"],"entscheidungen":["…"],"meine_aufgaben":[{"aufgabe":"mit Verb beginnend","frist":"","prioritaet":"hoch|normal","unsicher":false}],"aufgaben_andere":[{"wer":"Name aus der Liste oder unklar","aufgabe":"","frist":""}],"offene_fragen":["…"]}
 
 TRANSKRIPT:
 """
@@ -370,7 +380,8 @@ async function start(cont){
     evLog = cont ? (cont.protokoll || []).slice() : [];
     if (!cont){
       const m = { id: String(t0), created: t0, duration: 0, text: "", audio: null, titel: $("title").value.trim() || "Gespräch vom " + new Date(t0).toLocaleDateString("de-DE"),
-                  zusammenfassung:[], entscheidungen:[], meine_aufgaben:[], aufgaben_andere:[], offene_fragen:[], ausgewertet:false, laufend:true };
+                  zusammenfassung:[], entscheidungen:[], meine_aufgaben:[], aufgaben_andere:[], offene_fragen:[], ausgewertet:false, laufend:true, teilnehmer: parsePeople($("people").value) };
+      S.set("people", $("people").value.trim());
       meetings.unshift(m); contId = m.id; dbPut(m).catch(()=>{});
     }
     if (cont && cont.titel && !$("title").value) $("title").value = cont.titel;
@@ -437,6 +448,7 @@ async function finishSession(partial){
     else m.audioParts = (m.audioParts || []).concat(segments);
   }
   if ($("title").value.trim()) m.titel = $("title").value.trim();
+  if ($("people").value.trim()) m.teilnehmer = parsePeople($("people").value);
   segments = [];
   await dbPut(m).catch(()=>{});
   if (!partial){ contId = null; $("title").value = ""; }
@@ -450,18 +462,54 @@ async function stop(){
   await analyze(m);
 }
 
+async function runAnalysis(m){
+  if (!hasKey()) return "Kein API-Schlüssel eingetragen (⚙︎).";
+  try{
+    const r = normalize(parseJSON(await askClaude(finalPrompt(m.text.slice(0,400000), S.get("name","Thorsten"), m.teilnehmer), 4000)));
+    const keepTitle = m.ausgewertet || !/^Gespräch vom/.test(m.titel) ? m.titel : "";
+    const done = new Set((m.meine_aufgaben || []).filter(a => a.done).map(a => a.aufgabe));
+    r.meine_aufgaben.forEach(a => { if (done.has(a.aufgabe)) a.done = true; });
+    Object.assign(m, r, {ausgewertet:true}); if (keepTitle) m.titel = keepTitle;
+    await dbPut(m).catch(()=>{});
+    return "";
+  }catch(e){ return e.message || "unbekannter Fehler"; }
+}
 async function analyze(m){
   if (!hasKey()){ setStatus("Gespeichert. Für Zusammenfassung & Aufgaben API-Schlüssel unter ⚙︎ eintragen."); renderResult(m); return; }
   setStatus("Claude wertet das Gespräch aus …");
   renderResult(m, true);
-  try{
-    const r = normalize(parseJSON(await askClaude(finalPrompt(m.text.slice(0,400000), S.get("name","Thorsten")), 3000)));
-    const keepTitle = $("title").value.trim() || (m.ausgewertet ? m.titel : "");
-    Object.assign(m, r, {ausgewertet:true}); if (keepTitle) m.titel = keepTitle;
-    await dbPut(m).catch(()=>{});
-    setStatus("Fertig ✓");
-  }catch(e){ setStatus("Auswertung fehlgeschlagen: " + e.message + " – im Archiv erneut versuchen.", true); }
+  const err = await runAnalysis(m);
+  if (err) setStatus("Auswertung fehlgeschlagen: " + err + " – im Archiv erneut versuchen.", true); else setStatus("Fertig ✓");
   renderResult(m);
+}
+
+function parsePeople(v){ return String(v || "").split(/[,;\n]+/).map(x => x.trim()).filter(Boolean).slice(0, 30); }
+function groupOthers(m){
+  const g = new Map();
+  m.aufgaben_andere.forEach(a => { const k = a.wer || "unklar"; if (!g.has(k)) g.set(k, []); g.get(k).push(a); });
+  const keys = [...g.keys()].sort((x, y) => (x === "unklar") - (y === "unklar") || x.localeCompare(y, "de"));
+  return keys.map(k => `<div style="margin-top:8px"><b>${esc(k === "unklar" ? "Wer? (unklar)" : k)}</b><ul class="plain">${g.get(k).map(a => `<li>${esc(a.aufgabe)}${a.frist ? ` <span class="meta">(bis ${esc(a.frist)})</span>` : ""}</li>`).join("")}</ul></div>`).join("");
+}
+function protocolText(m){
+  const me = S.get("name","Thorsten");
+  const L = [];
+  L.push(m.titel, fmtDate(m.created) + " · Dauer " + fmtDur(m.duration || 0));
+  if ((m.teilnehmer || []).length) L.push("Teilnehmer: " + m.teilnehmer.join(", "));
+  if (!m.ausgewertet){ L.push("", "(Noch nicht ausgewertet)", "", m.text || ""); return L.join("\n"); }
+  L.push("", "ZUSAMMENFASSUNG"); m.zusammenfassung.forEach(x => L.push("• " + x));
+  if (m.entscheidungen.length){ L.push("", "ENTSCHEIDUNGEN"); m.entscheidungen.forEach(x => L.push("• " + x)); }
+  const g = new Map();
+  m.meine_aufgaben.forEach(a => { if (!g.has(me)) g.set(me, []); g.get(me).push(a); });
+  m.aufgaben_andere.forEach(a => { const k = a.wer || "unklar"; if (!g.has(k)) g.set(k, []); g.get(k).push(a); });
+  if (g.size){
+    L.push("", "AUFGABEN");
+    [...g.keys()].sort((x, y) => (x === "unklar") - (y === "unklar") || x.localeCompare(y, "de")).forEach(k => {
+      L.push(k === "unklar" ? "Wer? (unklar):" : k + ":");
+      g.get(k).forEach(a => L.push("  – " + a.aufgabe + (a.frist ? " (bis " + a.frist + ")" : "")));
+    });
+  }
+  if (m.offene_fragen.length){ L.push("", "OFFENE FRAGEN"); m.offene_fragen.forEach(x => L.push("• " + x)); }
+  return L.join("\n");
 }
 
 let contId = null;   // laufendes bzw. fortgesetztes Gespräch
@@ -519,22 +567,27 @@ const audioURLs = new Map();
 function audioURL(m){ if (!m.audio) return ""; if (!audioURLs.has(m.id)) audioURLs.set(m.id, URL.createObjectURL(m.audio)); return audioURLs.get(m.id); }
 function meetingHTML(m, busy){
   const ext = m.audio && /webm/.test(m.audio.type) ? "webm" : "m4a";
-  let h = `<div class="card"><h2>${esc(m.titel)}</h2><div class="meta">${fmtDate(m.created)} · ${fmtDur(m.duration||0)}</div>`;
+  let h = `<div class="card"><h2>${esc(m.titel)}</h2><div class="meta">${fmtDate(m.created)} · ${fmtDur(m.duration||0)}</div>${(m.teilnehmer||[]).length ? `<div class="meta">Teilnehmer: ${esc(m.teilnehmer.join(", "))}</div>` : ""}`;
   if (busy) h += `<p class="muted">Zusammenfassung wird erstellt …</p>`;
   else if (m.ausgewertet) h += `<ul class="plain" style="margin-top:8px">${li(m.zusammenfassung)}</ul>`;
   else if (m.text) h += `<p class="muted">Noch nicht ausgewertet.</p><button class="btn small" data-analyze="${esc(m.id)}">Jetzt auswerten</button>`;
   h += `</div>`;
   if (m.ausgewertet){
     h += `<div class="card"><h2>Das hast du zu tun</h2>${m.meine_aufgaben.length ? m.meine_aufgaben.map((_,i)=>taskHTML(m,i)).join("") : "<p class='muted'>Keine Aufgaben für dich erkannt.</p>"}
-          ${m.meine_aufgaben.length?`<div class="row" style="margin-top:10px"><button class="btn ghost small" data-copy="${esc(m.id)}">Aufgaben kopieren</button><span class="muted" id="cn-${esc(m.id)}"></span></div>`:""}</div>`;
+          ${m.meine_aufgaben.length?`<div class="row" style="margin-top:10px"><button class="btn ghost small" data-copy="${esc(m.id)}">Aufgaben kopieren</button><span class="muted cn-note"></span></div>`:""}</div>`;
     if (m.entscheidungen.length) h += `<div class="card"><h2>Entscheidungen</h2><ul class="plain">${li(m.entscheidungen)}</ul></div>`;
-    if (m.aufgaben_andere.length) h += `<div class="card"><h2>Aufgaben anderer</h2><ul class="plain">${m.aufgaben_andere.map(a=>`<li><b>${esc(a.wer||"?")}:</b> ${esc(a.aufgabe)}${a.frist?` <span class="meta">(bis ${esc(a.frist)})</span>`:""}</li>`).join("")}</ul></div>`;
+    if (m.aufgaben_andere.length) h += `<div class="card"><h2>Aufgaben der anderen</h2>${groupOthers(m)}</div>`;
     if (m.offene_fragen.length) h += `<div class="card"><h2>Offene Fragen</h2><ul class="plain">${li(m.offene_fragen)}</ul></div>`;
   }
   if (m.audio) h += `<div class="card"><h2>Aufnahme</h2><audio controls preload="none" src="${audioURL(m)}"></audio><div class="row" style="margin-top:8px"><a class="btn ghost small" href="${audioURL(m)}" download="${esc(m.titel)}.${ext}">Audio sichern</a></div></div>`;
   (m.audioParts || []).forEach((b, i) => { const u = URL.createObjectURL(b); h += `<div class="card"><h2>Aufnahme – Teil ${i + 2}</h2><audio controls preload="none" src="${u}"></audio><div class="row" style="margin-top:8px"><a class="btn ghost small" href="${u}" download="${esc(m.titel)} Teil ${i + 2}.${ext}">Audio sichern</a></div></div>`; });
   if (m.laufend && !(recording && m.id === contId)) h += `<div class="card"><p class="muted">Diese Aufnahme wurde nicht regulär beendet (Seite geschlossen oder neu geladen). Der Text bis dahin ist gesichert.</p></div>`;
   if (m.text) h += `<details class="card"><summary>Mitschrift</summary><div class="transcript" style="margin-top:8px">${esc(m.text)}</div></details>`;
+  if (!busy && (m.text || m.ausgewertet)) h += `<div class="card"><h2>Weitergeben</h2><div class="row">
+      ${navigator.share ? `<button class="btn small" data-share="${esc(m.id)}">Teilen …</button>` : ""}
+      <button class="btn ghost small" data-cpy="${esc(m.id)}" data-what="prot">Protokoll kopieren</button>
+      <button class="btn ghost small" data-cpy="${esc(m.id)}" data-what="text">Mitschrift kopieren</button>
+    </div><div class="muted cp-note" style="margin-top:6px"></div></div>`;
   if (m.protokoll && m.protokoll.length) h += `<details class="card"><summary>Technik-Protokoll</summary><div class="transcript" style="margin-top:8px;font-size:.8rem">${esc(m.protokoll.join("\n"))}</div></details>`;
   return h;
 }
@@ -555,7 +608,10 @@ function renderLists(){
 let openId = null;
 function openDetail(id){
   const m = meetings.find(x=>x.id===id); if(!m) return; openId=id;
-  $("detail").innerHTML = meetingHTML(m) + `<button class="btn ghost" data-del="${esc(m.id)}">Gespräch löschen</button>`;
+  $("detail").innerHTML = meetingHTML(m) + (m.text ? `<div class="card"><h2>Teilnehmer &amp; neu auswerten</h2>
+      <input type="text" id="re-people" value="${esc((m.teilnehmer||[]).join(", "))}" placeholder="z. B. Peter Meyer, Maria Schulz">
+      <div class="row" style="margin-top:10px"><button class="btn small" data-reanalyze="${esc(m.id)}">${m.ausgewertet ? "Neu auswerten" : "Auswerten"}</button><span class="muted" id="re-note"></span></div></div>` : "")
+    + `<button class="btn ghost" data-del="${esc(m.id)}">Gespräch löschen</button>`;
   $("arch-card").classList.add("hidden"); $("arch-detail").classList.remove("hidden"); window.scrollTo(0,0);
 }
 function closeDetail(){ openId=null; $("arch-detail").classList.add("hidden"); $("arch-card").classList.remove("hidden"); }
@@ -563,7 +619,29 @@ $("back").onclick = () => { closeDetail(); renderLists(); };
 
 let delArmed = null;
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-open],[data-analyze],[data-copy],[data-del],[data-new]"); if (!t) return;
+  const t = e.target.closest("[data-open],[data-analyze],[data-copy],[data-del],[data-new],[data-cpy],[data-share],[data-reanalyze]"); if (!t) return;
+  if (t.dataset.cpy){
+    const m = meetings.find(x=>x.id===t.dataset.cpy); if (!m) return;
+    const txt = t.dataset.what === "text" ? m.titel + "\n" + fmtDate(m.created) + "\n\n" + (m.text || "") : protocolText(m);
+    const note = t.closest(".card")?.querySelector(".cp-note");
+    try{ await navigator.clipboard.writeText(txt); if (note) note.textContent = "Kopiert – jetzt z. B. in Mail oder WhatsApp einfügen."; }
+    catch(err){ if (note) note.textContent = "Kopieren nicht möglich."; }
+    return;
+  }
+  if (t.dataset.share){
+    const m = meetings.find(x=>x.id===t.dataset.share); if (!m) return;
+    try{ await navigator.share({title: m.titel, text: protocolText(m)}); }catch(err){}
+    return;
+  }
+  if (t.dataset.reanalyze){
+    const m = meetings.find(x=>x.id===t.dataset.reanalyze); if (!m) return;
+    m.teilnehmer = parsePeople($("re-people")?.value || "");
+    t.disabled = true; $("re-note").textContent = "Claude wertet aus …";
+    const err = await runAnalysis(m);
+    openDetail(m.id); renderLists();
+    if (err) $("re-note").textContent = "Fehler: " + err;
+    return;
+  }
   if (t.dataset.new){ resetRecView(); window.scrollTo(0,0); }
   else if (t.dataset.open) openDetail(t.dataset.open);
   else if (t.dataset.analyze){
@@ -573,7 +651,7 @@ document.addEventListener("click", async e => {
   else if (t.dataset.copy){
     const m = meetings.find(x=>x.id===t.dataset.copy); if (!m) return;
     const txt = m.titel + "\n" + m.meine_aufgaben.map(a=>"☐ "+a.aufgabe+(a.frist?" (bis "+a.frist+")":"")).join("\n");
-    const note = document.getElementById("cn-"+m.id);
+    const note = t.closest(".card")?.querySelector(".cn-note");
     try{ await navigator.clipboard.writeText(txt); if(note) note.textContent="Kopiert."; }catch(err){ if(note) note.textContent="Kopieren nicht möglich."; }
   }
   else if (t.dataset.del){
