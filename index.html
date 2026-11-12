@@ -125,7 +125,7 @@ details summary{cursor:pointer;font-weight:600}
     <div class="status" id="set-status" style="text-align:left"></div>
   </div>
   <div class="card muted">
-    <b>Version 11</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
+    <b>Version 12</b><br><br><b>Tipp:</b> In Safari auf „Teilen“ → „Zum Home-Bildschirm“ tippen. Dann startet der Recorder wie eine App.<br><br>
     <b>Rechtlicher Hinweis:</b> Nimm Gespräche nur auf, wenn alle Beteiligten zugestimmt haben.
   </div>
 </section>
@@ -564,6 +564,136 @@ document.addEventListener("visibilitychange", () => {
   startRecognition();
 });
 
+
+/* ---------- PDF (eigener kleiner Generator, ohne fremde Bibliothek) ---------- */
+const PDFW = {"n": [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584, 761, 556, 0, 222, 556, 333, 1000, 556, 556, 333, 1000, 667, 333, 1000, 0, 611, 0, 0, 222, 222, 333, 333, 350, 556, 1000, 333, 1000, 500, 333, 944, 0, 500, 667, 278, 333, 556, 556, 556, 556, 260, 556, 333, 737, 370, 556, 584, 333, 737, 333, 400, 584, 333, 333, 333, 556, 537, 278, 333, 333, 365, 556, 834, 834, 834, 611, 667, 667, 667, 667, 667, 667, 1000, 722, 667, 667, 667, 667, 278, 278, 278, 278, 722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611, 556, 556, 556, 556, 556, 556, 889, 500, 556, 556, 556, 556, 278, 278, 278, 278, 556, 556, 556, 556, 556, 556, 556, 584, 611, 556, 556, 556, 556, 500, 556, 500], "b": [278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611, 975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556, 333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611, 611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584, 761, 556, 0, 278, 556, 500, 1000, 556, 556, 333, 1000, 667, 333, 1000, 0, 611, 0, 0, 278, 278, 500, 500, 350, 556, 1000, 333, 1000, 556, 333, 944, 0, 500, 667, 278, 333, 556, 556, 556, 556, 280, 556, 333, 737, 370, 556, 584, 333, 737, 333, 400, 584, 333, 333, 333, 611, 556, 278, 333, 333, 365, 556, 834, 834, 834, 611, 722, 722, 722, 722, 722, 722, 1000, 722, 667, 667, 667, 667, 278, 278, 278, 278, 722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611, 556, 556, 556, 556, 556, 556, 889, 556, 556, 556, 556, 556, 278, 278, 278, 278, 611, 611, 611, 611, 611, 611, 611, 584, 611, 611, 611, 611, 611, 556, 611, 556]};
+const CP1252 = {"€":128,"‚":130,"ƒ":131,"„":132,"…":133,"†":134,"‡":135,"ˆ":136,"‰":137,"Š":138,"‹":139,"Œ":140,"Ž":142,"‘":145,"’":146,"“":147,"”":148,"•":149,"–":150,"—":151,"˜":152,"™":153,"š":154,"›":155,"œ":156,"ž":158,"Ÿ":159};
+const PDFREPL = {"→":"->","←":"<-","☐":"[ ]","✓":"(ok)","✔":"(ok)","≥":">=","≤":"<=","≈":"~","−":"-","‑":"-"," ":" ","\t":" "};
+function pdfBytes(str){            // String -> Zeichencodes in WinAnsi
+  const out = [];
+  for (const ch of String(str)){
+    if (PDFREPL[ch] !== undefined){ for (const c of PDFREPL[ch]) out.push(c.charCodeAt(0)); continue; }
+    const c = ch.codePointAt(0);
+    if (c >= 32 && c < 127) out.push(c);
+    else if (CP1252[ch]) out.push(CP1252[ch]);
+    else if (c >= 160 && c <= 255) out.push(c);
+    else if (c === 10 || c === 13) out.push(32);
+    else if (/[̀-ͯ️‍]/.test(ch)) {}
+    else if (c < 0x2000) out.push(63);     // unbekannter Buchstabe
+    // Symbole/Emojis werden weggelassen
+  }
+  return out;
+}
+function pdfWidth(codes, font, size){ let w = 0; for (const c of codes) w += (PDFW[font][c - 32] || 500); return w * size / 1000; }
+function pdfWrap(text, font, size, maxW){
+  const words = String(text).split(/\s+/).filter(Boolean), lines = []; let cur = "";
+  for (const w of words){
+    const t = cur ? cur + " " + w : w;
+    if (pdfWidth(pdfBytes(t), font, size) <= maxW) { cur = t; continue; }
+    if (cur) lines.push(cur);
+    if (pdfWidth(pdfBytes(w), font, size) > maxW){          // überlanges Wort hart umbrechen
+      let part = ""; for (const ch of w){ if (pdfWidth(pdfBytes(part + ch), font, size) > maxW){ lines.push(part); part = ch; } else part += ch; }
+      cur = part;
+    } else cur = w;
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [""];
+}
+function pdfStr(codes){
+  let s = "(";
+  for (const c of codes){
+    if (c === 40 || c === 41 || c === 92) s += "\\" + String.fromCharCode(c);
+    else if (c < 32 || c > 126) s += "\\" + c.toString(8).padStart(3, "0");
+    else s += String.fromCharCode(c);
+  }
+  return s + ")";
+}
+function buildPdf(m){
+  const PW = 595, PH = 842, ML = 56, MR = 56, MT = 60, MB = 60, maxW = PW - ML - MR;
+  const blocks = [];      // {text,font,size,indent,gap,color,bullet}
+  const add = (text, o = {}) => blocks.push(Object.assign({text, font:"n", size:10.5, indent:0, gap:0, color:0, bullet:""}, o));
+  const me = S.get("name","Thorsten");
+  add(m.titel, {font:"b", size:17});
+  add(fmtDate(m.created) + " · Dauer " + fmtDur(m.duration || 0), {size:9.5, color:0.4, gap:4});
+  if ((m.teilnehmer || []).length) add("Teilnehmer: " + m.teilnehmer.join(", "), {size:9.5, color:0.4, gap:2});
+  const sec = t => add(t, {font:"b", size:12, gap:16});
+  const bullets = xs => xs.forEach(x => add(x, {indent:14, bullet:"•", gap:3}));
+  if (m.ausgewertet){
+    sec("Zusammenfassung"); bullets(m.zusammenfassung);
+    if (m.entscheidungen.length){ sec("Entscheidungen"); bullets(m.entscheidungen); }
+    const g = new Map();
+    m.meine_aufgaben.forEach(a => { if (!g.has(me)) g.set(me, []); g.get(me).push(a); });
+    m.aufgaben_andere.forEach(a => { const k = a.wer || "unklar"; if (!g.has(k)) g.set(k, []); g.get(k).push(a); });
+    if (g.size){
+      sec("Aufgaben");
+      [...g.keys()].sort((x, y) => (x === "unklar") - (y === "unklar") || x.localeCompare(y, "de")).forEach(k => {
+        add(k === "unklar" ? "Wer? (unklar)" : k, {font:"b", size:10.5, gap:8});
+        g.get(k).forEach(a => add(a.aufgabe + (a.frist ? " (bis " + a.frist + ")" : "") + (a.done ? " – erledigt" : ""), {indent:14, bullet:"–", gap:3}));
+      });
+    }
+    if (m.offene_fragen.length){ sec("Offene Fragen"); bullets(m.offene_fragen); }
+  } else {
+    sec("Mitschrift (noch nicht ausgewertet)");
+    String(m.text || "").split(/\n+/).forEach(p => add(p, {gap:4}));
+  }
+  add("Automatisch erstellt mit dem Gesprächs-Recorder – Inhalte bitte vor dem Versand prüfen.", {size:8, color:0.5, gap:22});
+
+  // Seiten setzen
+  const pages = []; let ops = [], y = PH - MT;
+  const newPage = () => { pages.push(ops); ops = []; y = PH - MT; };
+  for (const b of blocks){
+    const lh = b.size * 1.35, lines = pdfWrap(b.text, b.font, b.size, maxW - b.indent);
+    y -= b.gap;
+    if (y - lh < MB && ops.length) newPage();
+    lines.forEach((ln, i) => {
+      if (y - lh < MB){ newPage(); }
+      y -= lh;
+      const f = b.font === "b" ? "F2" : "F1";
+      ops.push(`${b.color} g BT /${f} ${b.size} Tf ${ML + b.indent} ${y.toFixed(2)} Td ${pdfStr(pdfBytes(ln))} Tj ET`);
+      if (i === 0 && b.bullet) ops.push(`${b.color} g BT /F1 ${b.size} Tf ${ML + b.indent - 11} ${y.toFixed(2)} Td ${pdfStr(pdfBytes(b.bullet))} Tj ET`);
+    });
+  }
+  pages.push(ops);
+  const N = pages.length;
+  pages.forEach((p, i) => { if (N > 1) p.push(`0.5 g BT /F1 8 Tf ${PW - MR - 60} 30 Td ${pdfStr(pdfBytes("Seite " + (i + 1) + " von " + N))} Tj ET`); });
+
+  // PDF-Objekte schreiben
+  const objs = [];
+  objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objs[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
+  objs[4] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
+  const kids = [];
+  pages.forEach((p, i) => {
+    const pid = 5 + i * 2, cid = pid + 1, content = p.join("\n");
+    kids.push(pid + " 0 R");
+    objs[pid] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${cid} 0 R >>`;
+    objs[cid] = `<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
+  });
+  objs[2] = `<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${N} >>`;
+  let out = "%PDF-1.4\n%âãÏÓ\n"; const offs = [];
+  for (let i = 1; i < objs.length; i++){ offs[i] = out.length; out += `${i} 0 obj\n${objs[i]}\nendobj\n`; }
+  const xref = out.length;
+  out += `xref\n0 ${objs.length}\n0000000000 65535 f \n` + offs.slice(1).map(o => String(o).padStart(10, "0") + " 00000 n \n").join("");
+  out += `trailer\n<< /Size ${objs.length} /Root 1 0 R /Info << /Producer (Gespraechs-Recorder) >> >>\nstartxref\n${xref}\n%%EOF`;
+  const bytes = new Uint8Array(out.length); for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
+  return new Blob([bytes], {type: "application/pdf"});
+}
+function pdfName(m){
+  const d = new Date(m.created).toLocaleDateString("de-DE");
+  return ("Protokoll " + m.titel + " " + d).replace(/[\\/:*?"<>|]+/g, "-").slice(0, 90) + ".pdf";
+}
+async function sharePdf(m, note){
+  const blob = buildPdf(m), name = pdfName(m);
+  const file = new File([blob], name, {type: "application/pdf"});
+  try{
+    if (navigator.canShare && navigator.canShare({files: [file]})){ await navigator.share({files: [file], title: m.titel}); return; }
+  }catch(e){ if (e && e.name === "AbortError") return; }
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  if (note) note.textContent = "PDF erstellt – siehe Downloads bzw. das geöffnete Fenster.";
+}
+
 /* ---------- Darstellung ---------- */
 const fmtDate = ts => new Date(ts).toLocaleString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
 const li = xs => xs.map(x=>`<li>${esc(x)}</li>`).join("");
@@ -593,7 +723,8 @@ function meetingHTML(m, busy){
   if (m.laufend && !(recording && m.id === contId)) h += `<div class="card"><p class="muted">Diese Aufnahme wurde nicht regulär beendet (Seite geschlossen oder neu geladen). Der Text bis dahin ist gesichert.</p></div>`;
   if (m.text) h += `<details class="card"><summary>Mitschrift</summary><div class="transcript" style="margin-top:8px">${esc(m.text)}</div></details>`;
   if (!busy && (m.text || m.ausgewertet)) h += `<div class="card"><h2>Weitergeben</h2><div class="row">
-      ${navigator.share ? `<button class="btn small" data-share="${esc(m.id)}">Teilen …</button>` : ""}
+      ${navigator.share ? `<button class="btn ghost small" data-share="${esc(m.id)}">Als Text teilen …</button>` : ""}
+      <button class="btn small" data-pdf="${esc(m.id)}">Als PDF</button>
       <button class="btn ghost small" data-cpy="${esc(m.id)}" data-what="prot">Protokoll kopieren</button>
       <button class="btn ghost small" data-cpy="${esc(m.id)}" data-what="text">Mitschrift kopieren</button>
     </div><div class="muted cp-note" style="margin-top:6px"></div></div>`;
@@ -628,7 +759,13 @@ $("back").onclick = () => { closeDetail(); renderLists(); };
 
 let delArmed = null;
 document.addEventListener("click", async e => {
-  const t = e.target.closest("[data-open],[data-analyze],[data-copy],[data-del],[data-new],[data-cpy],[data-share],[data-reanalyze]"); if (!t) return;
+  const t = e.target.closest("[data-open],[data-analyze],[data-copy],[data-del],[data-new],[data-cpy],[data-share],[data-reanalyze],[data-pdf]"); if (!t) return;
+  if (t.dataset.pdf){
+    const m = meetings.find(x=>x.id===t.dataset.pdf); if (!m) return;
+    const note = t.closest(".card")?.querySelector(".cp-note");
+    try{ await sharePdf(m, note); }catch(err){ if (note) note.textContent = "PDF konnte nicht erstellt werden: " + err.message; }
+    return;
+  }
   if (t.dataset.cpy){
     const m = meetings.find(x=>x.id===t.dataset.cpy); if (!m) return;
     const txt = t.dataset.what === "text" ? m.titel + "\n" + fmtDate(m.created) + "\n\n" + (m.text || "") : protocolText(m);
